@@ -1,0 +1,16 @@
+[package]
+name = "cookie_commander"
+version = "0.1.0"
+edition = "2021"
+authors = ["CookieCommander Contributors"]
+description = "Terminal-based orthodox file manager for macOS"
+
+[dependencies]
+tokio = { version = "1", features = ["full"] }
+ratatui = "0.26"
+crossterm = "0.27"
+anyhow = "1.0"
+async-trait = "0.1"
+
+[dev-dependencies]
+mockall = "0.12"
