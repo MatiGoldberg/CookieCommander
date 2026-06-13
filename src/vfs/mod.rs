@@ -1,8 +1,10 @@
 #![allow(unused_imports)]
 
 pub mod traits;
+pub mod local;
 
 pub use traits::{FileMetadata, FileType, Vfs};
+pub use local::LocalVfs;
 
 #[cfg(test)]
 pub use traits::MockVfs;
