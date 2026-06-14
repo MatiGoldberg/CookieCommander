@@ -1,7 +1,7 @@
-mod vfs;
-mod ui;
 mod state;
 mod task_manager;
+mod ui;
+mod vfs;
 
 use crate::state::{AppStateManager, InputMode};
 use crate::vfs::LocalVfs;
@@ -113,6 +113,9 @@ async fn run_app<B: ratatui::backend::Backend>(
                             KeyCode::Esc | KeyCode::Char('q') => {
                                 state.close_file_viewer();
                             }
+                            KeyCode::Char('e') => {
+                                state.open_in_editor();
+                            }
                             KeyCode::Up => {
                                 state.scroll_viewer_up(1);
                             }
@@ -129,7 +132,10 @@ async fn run_app<B: ratatui::backend::Backend>(
                             KeyCode::PageDown => {
                                 let height = terminal.size().map(|s| s.height).unwrap_or(24);
                                 let visible_height = (height.saturating_sub(10) as usize).max(1);
-                                state.scroll_viewer_down(visible_height.saturating_sub(2).max(1), visible_height);
+                                state.scroll_viewer_down(
+                                    visible_height.saturating_sub(2).max(1),
+                                    visible_height,
+                                );
                             }
                             _ => {}
                         },

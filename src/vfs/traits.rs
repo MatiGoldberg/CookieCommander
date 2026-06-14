@@ -26,7 +26,7 @@ pub struct FileMetadata {
 pub trait Vfs: Send + Sync {
     /// Returns the metadata for a given path.
     async fn metadata(&self, path: &str) -> Result<FileMetadata>;
-    
+
     /// Reads a directory and returns a list of its entries.
     async fn read_dir(&self, path: &str) -> Result<Vec<FileMetadata>>;
 

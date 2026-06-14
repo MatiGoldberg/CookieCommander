@@ -19,11 +19,11 @@ impl PaneState {
 
     pub async fn refresh(&mut self, vfs: &dyn Vfs) -> Result<()> {
         let raw_entries = vfs.read_dir(&self.current_path).await?;
-        
+
         let mut dotdot = None;
         let mut dirs = Vec::new();
         let mut files = Vec::new();
-        
+
         for entry in raw_entries {
             if entry.name == ".." {
                 dotdot = Some(entry);
@@ -33,17 +33,17 @@ impl PaneState {
                 files.push(entry);
             }
         }
-        
+
         dirs.sort_by_key(|a| a.name.to_lowercase());
         files.sort_by_key(|a| a.name.to_lowercase());
-        
+
         let mut sorted = Vec::new();
         if let Some(dd) = dotdot {
             sorted.push(dd);
         }
         sorted.extend(dirs);
         sorted.extend(files);
-        
+
         self.entries = sorted;
         if self.selected_index >= self.entries.len() {
             self.selected_index = self.entries.len().saturating_sub(1);
@@ -71,14 +71,15 @@ impl PaneState {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::vfs::MockVfs;
     use crate::vfs::FileMetadata;
     use crate::vfs::FileType;
+    use crate::vfs::MockVfs;
 
     #[tokio::test]
     async fn test_pane_state_refresh_and_sorting() {
         let mut mock_vfs = MockVfs::new();
-        mock_vfs.expect_read_dir()
+        mock_vfs
+            .expect_read_dir()
             .with(mockall::predicate::eq("/test"))
             .times(1)
             .returning(|_| {
@@ -132,15 +133,30 @@ mod tests {
     fn test_pane_navigation() {
         let mut state = PaneState::new("/test".to_string());
         state.entries = vec![
-            FileMetadata { name: "..".to_string(), size: 0, file_type: FileType::Directory, modified: None },
-            FileMetadata { name: "dir_a".to_string(), size: 0, file_type: FileType::Directory, modified: None },
-            FileMetadata { name: "file_a.txt".to_string(), size: 10, file_type: FileType::File, modified: None },
+            FileMetadata {
+                name: "..".to_string(),
+                size: 0,
+                file_type: FileType::Directory,
+                modified: None,
+            },
+            FileMetadata {
+                name: "dir_a".to_string(),
+                size: 0,
+                file_type: FileType::Directory,
+                modified: None,
+            },
+            FileMetadata {
+                name: "file_a.txt".to_string(),
+                size: 10,
+                file_type: FileType::File,
+                modified: None,
+            },
         ];
         state.selected_index = 0;
 
         state.select_next();
         assert_eq!(state.selected_index, 1);
-        
+
         state.select_next();
         assert_eq!(state.selected_index, 2);
 

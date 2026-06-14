@@ -47,14 +47,27 @@ fn render_header(f: &mut Frame, area: Rect) {
             .into_iter()
             .map(|l| {
                 let padded = format!("{:width$}", l, width = max_len);
-                Line::from(Span::styled(padded, Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)))
+                Line::from(Span::styled(
+                    padded,
+                    Style::default()
+                        .fg(Color::Cyan)
+                        .add_modifier(Modifier::BOLD),
+                ))
             })
             .collect();
         lines
     } else {
         vec![
-            Line::from(Span::styled("CookieCommander", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))),
-            Line::from(Span::styled("Orthodox File Manager", Style::default().fg(Color::DarkGray))),
+            Line::from(Span::styled(
+                "CookieCommander",
+                Style::default()
+                    .fg(Color::Cyan)
+                    .add_modifier(Modifier::BOLD),
+            )),
+            Line::from(Span::styled(
+                "Orthodox File Manager",
+                Style::default().fg(Color::DarkGray),
+            )),
         ]
     };
 
@@ -72,10 +85,7 @@ fn render_header(f: &mut Frame, area: Rect) {
 fn render_panes(f: &mut Frame, area: Rect, state: &AppStateManager) {
     let pane_chunks = Layout::default()
         .direction(Direction::Horizontal)
-        .constraints([
-            Constraint::Percentage(50),
-            Constraint::Percentage(50),
-        ])
+        .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
         .split(area);
 
     render_pane(f, pane_chunks[0], &state.left_pane, state.active_left);
@@ -90,7 +100,9 @@ fn render_pane(f: &mut Frame, area: Rect, pane: &PaneState, is_active: bool) {
     };
 
     let title_style = if is_active {
-        Style::default().fg(Color::LightGreen).add_modifier(Modifier::BOLD)
+        Style::default()
+            .fg(Color::LightGreen)
+            .add_modifier(Modifier::BOLD)
     } else {
         Style::default().fg(Color::Gray)
     };
@@ -115,14 +127,18 @@ fn render_pane(f: &mut Frame, area: Rect, pane: &PaneState, is_active: bool) {
 
             let name_span = Span::styled(
                 format!("{}{}", prefix, entry.name),
-                Style::default().fg(color).add_modifier(if is_dir { Modifier::BOLD } else { Modifier::empty() }),
+                Style::default().fg(color).add_modifier(if is_dir {
+                    Modifier::BOLD
+                } else {
+                    Modifier::empty()
+                }),
             );
 
             // Calculate spacing to push size to the right side of the pane
             let width = inner_area.width as usize;
             let size_str = format_size(entry.size, is_dir);
             let display_name_len = prefix.chars().count() + entry.name.chars().count();
-            
+
             let spaces = if width > display_name_len + size_str.len() + 2 {
                 width - display_name_len - size_str.len() - 2
             } else {
@@ -142,9 +158,7 @@ fn render_pane(f: &mut Frame, area: Rect, pane: &PaneState, is_active: bool) {
             .fg(Color::Black)
             .add_modifier(Modifier::BOLD)
     } else {
-        Style::default()
-            .bg(Color::DarkGray)
-            .fg(Color::White)
+        Style::default().bg(Color::DarkGray).fg(Color::White)
     };
 
     let list = List::new(items)
@@ -179,19 +193,49 @@ fn format_size(bytes: u64, is_dir: bool) -> String {
 fn render_footer(f: &mut Frame, area: Rect, state: &AppStateManager) {
     let text = if let Some(msg) = &state.status_message {
         Line::from(vec![
-            Span::styled(" STATUS: ", Style::default().bg(Color::Red).fg(Color::White).add_modifier(Modifier::BOLD)),
+            Span::styled(
+                " STATUS: ",
+                Style::default()
+                    .bg(Color::Red)
+                    .fg(Color::White)
+                    .add_modifier(Modifier::BOLD),
+            ),
             Span::raw(" "),
             Span::styled(msg, Style::default().fg(Color::LightRed)),
         ])
     } else {
         Line::from(vec![
-            Span::styled(" Tab ", Style::default().bg(Color::Yellow).fg(Color::Black).add_modifier(Modifier::BOLD)),
+            Span::styled(
+                " Tab ",
+                Style::default()
+                    .bg(Color::Yellow)
+                    .fg(Color::Black)
+                    .add_modifier(Modifier::BOLD),
+            ),
             Span::raw(" Switch Pane  "),
-            Span::styled(" Enter ", Style::default().bg(Color::Yellow).fg(Color::Black).add_modifier(Modifier::BOLD)),
+            Span::styled(
+                " Enter ",
+                Style::default()
+                    .bg(Color::Yellow)
+                    .fg(Color::Black)
+                    .add_modifier(Modifier::BOLD),
+            ),
             Span::raw(" Open  "),
-            Span::styled(" g ", Style::default().bg(Color::Yellow).fg(Color::Black).add_modifier(Modifier::BOLD)),
+            Span::styled(
+                " g ",
+                Style::default()
+                    .bg(Color::Yellow)
+                    .fg(Color::Black)
+                    .add_modifier(Modifier::BOLD),
+            ),
             Span::raw(" Go to Path  "),
-            Span::styled(" Esc/q ", Style::default().bg(Color::Yellow).fg(Color::Black).add_modifier(Modifier::BOLD)),
+            Span::styled(
+                " Esc/q ",
+                Style::default()
+                    .bg(Color::Yellow)
+                    .fg(Color::Black)
+                    .add_modifier(Modifier::BOLD),
+            ),
             Span::raw(" Quit"),
         ])
     };
@@ -204,7 +248,12 @@ fn render_go_to_popup(f: &mut Frame, area: Rect, state: &AppStateManager) {
     let popup_area = centered_rect(60, 20, area);
 
     let popup_block = Block::default()
-        .title(Span::styled(" Go to Directory Path ", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)))
+        .title(Span::styled(
+            " Go to Directory Path ",
+            Style::default()
+                .fg(Color::Yellow)
+                .add_modifier(Modifier::BOLD),
+        ))
         .borders(Borders::ALL)
         .border_style(Style::default().fg(Color::Yellow));
 
@@ -215,7 +264,10 @@ fn render_go_to_popup(f: &mut Frame, area: Rect, state: &AppStateManager) {
             Span::styled("█", Style::default().fg(Color::LightGreen)), // simulated blinking cursor
         ]),
         Line::from(""),
-        Line::from(Span::styled("Press Enter to navigate | Esc to cancel", Style::default().fg(Color::DarkGray))),
+        Line::from(Span::styled(
+            "Press Enter to navigate | Esc to cancel",
+            Style::default().fg(Color::DarkGray),
+        )),
     ])
     .block(popup_block);
 
@@ -262,12 +314,14 @@ fn render_file_viewer(f: &mut Frame, area: Rect, state: &AppStateManager) {
         .split(viewer_area);
 
     let total_lines = viewer.lines.len();
-    
+
     // Main block for the content
     let block = Block::default()
         .title(Span::styled(
             format!(" File Viewer: {} ", viewer.file_name),
-            Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD),
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD),
         ))
         .borders(Borders::ALL)
         .border_style(Style::default().fg(Color::Cyan));
@@ -286,7 +340,9 @@ fn render_file_viewer(f: &mut Frame, area: Rect, state: &AppStateManager) {
     let paragraph = if total_lines == 0 {
         Paragraph::new(vec![Line::from(Span::styled(
             "~ Empty File ~",
-            Style::default().fg(Color::DarkGray).add_modifier(Modifier::ITALIC),
+            Style::default()
+                .fg(Color::DarkGray)
+                .add_modifier(Modifier::ITALIC),
         ))])
     } else {
         Paragraph::new(display_lines)
@@ -295,11 +351,7 @@ fn render_file_viewer(f: &mut Frame, area: Rect, state: &AppStateManager) {
     f.render_widget(paragraph.block(block), viewer_chunks[0]);
 
     // Help bar rendering
-    let percentage = if total_lines > 0 {
-        (end * 100) / total_lines
-    } else {
-        100
-    };
+    let percentage = (end * 100).checked_div(total_lines).unwrap_or(100);
     let scroll_info = format!(
         "Line {}-{} of {} ({}%)",
         if total_lines == 0 { 0 } else { start + 1 },
@@ -309,14 +361,46 @@ fn render_file_viewer(f: &mut Frame, area: Rect, state: &AppStateManager) {
     );
 
     let help_line = Line::from(vec![
-        Span::styled(" Esc/q ", Style::default().bg(Color::Yellow).fg(Color::Black).add_modifier(Modifier::BOLD)),
+        Span::styled(
+            " Esc/q ",
+            Style::default()
+                .bg(Color::Yellow)
+                .fg(Color::Black)
+                .add_modifier(Modifier::BOLD),
+        ),
         Span::raw(" Close Viewer  "),
-        Span::styled(" Up/Down ", Style::default().bg(Color::Yellow).fg(Color::Black).add_modifier(Modifier::BOLD)),
+        Span::styled(
+            " e ",
+            Style::default()
+                .bg(Color::Yellow)
+                .fg(Color::Black)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Span::raw(" Edit  "),
+        Span::styled(
+            " Up/Down ",
+            Style::default()
+                .bg(Color::Yellow)
+                .fg(Color::Black)
+                .add_modifier(Modifier::BOLD),
+        ),
         Span::raw(" Scroll Line  "),
-        Span::styled(" PgUp/PgDn ", Style::default().bg(Color::Yellow).fg(Color::Black).add_modifier(Modifier::BOLD)),
+        Span::styled(
+            " PgUp/PgDn ",
+            Style::default()
+                .bg(Color::Yellow)
+                .fg(Color::Black)
+                .add_modifier(Modifier::BOLD),
+        ),
         Span::raw(" Scroll Page  "),
-        Span::styled(format!("  {}  ", scroll_info), Style::default().fg(Color::LightCyan)),
-        Span::styled(format!("  {}  ", viewer.file_path), Style::default().fg(Color::DarkGray)),
+        Span::styled(
+            format!("  {}  ", scroll_info),
+            Style::default().fg(Color::LightCyan),
+        ),
+        Span::styled(
+            format!("  {}  ", viewer.file_path),
+            Style::default().fg(Color::DarkGray),
+        ),
     ]);
 
     f.render_widget(Paragraph::new(help_line), viewer_chunks[1]);
