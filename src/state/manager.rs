@@ -120,6 +120,7 @@ pub struct AppStateManager {
     pub status_message: Option<String>,
     pub file_viewer: Option<FileViewerState>,
     pub config: AppConfig,
+    pub config_path: String,
 }
 
 impl AppStateManager {
@@ -133,12 +134,13 @@ impl AppStateManager {
             status_message: None,
             file_viewer: None,
             config: AppConfig::default(),
+            config_path: "config.json".to_string(),
         }
     }
 
     pub async fn init(&mut self, vfs: &dyn Vfs) -> Result<()> {
         // Load configuration
-        match vfs.read_file("config.json").await {
+        match vfs.read_file(&self.config_path).await {
             Ok(content) => match serde_json::from_str::<AppConfig>(&content) {
                 Ok(cfg) => {
                     self.config = cfg;
@@ -150,10 +152,10 @@ impl AppStateManager {
                 }
             },
             Err(_) => {
-                // Generate default config.json
+                // Generate default config
                 let default_cfg = AppConfig::default();
                 if let Ok(json_str) = serde_json::to_string_pretty(&default_cfg) {
-                    let _ = tokio::fs::write("config.json", json_str).await;
+                    let _ = tokio::fs::write(&self.config_path, json_str).await;
                 }
                 self.config = default_cfg;
             }
@@ -178,7 +180,7 @@ impl AppStateManager {
 
         if config_updated {
             if let Ok(json_str) = serde_json::to_string_pretty(&self.config) {
-                let _ = tokio::fs::write("config.json", json_str).await;
+                let _ = tokio::fs::write(&self.config_path, json_str).await;
             }
         }
 
@@ -398,30 +400,15 @@ mod tests {
     use super::*;
     use crate::vfs::{FileMetadata, FileType, MockVfs};
 
-    struct TempDirGuard {
-        old_cwd: std::path::PathBuf,
-        temp_dir: std::path::PathBuf,
-    }
-
-    impl TempDirGuard {
-        fn new() -> Self {
-            let unique_id = std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_nanos();
-            let temp_dir = std::env::temp_dir().join(format!("test_run_{}", unique_id));
-            std::fs::create_dir_all(&temp_dir).unwrap();
-            let old_cwd = std::env::current_dir().unwrap();
-            std::env::set_current_dir(&temp_dir).unwrap();
-            Self { old_cwd, temp_dir }
-        }
-    }
-
-    impl Drop for TempDirGuard {
-        fn drop(&mut self) {
-            let _ = std::env::set_current_dir(&self.old_cwd);
-            let _ = std::fs::remove_dir_all(&self.temp_dir);
-        }
+    fn get_temp_config_path() -> String {
+        let unique_id = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        std::env::temp_dir()
+            .join(format!("config_{}.json", unique_id))
+            .to_string_lossy()
+            .to_string()
     }
 
     #[tokio::test]
@@ -437,13 +424,13 @@ mod tests {
 
     #[tokio::test]
     async fn test_manager_handle_enter_directory() {
-        let _guard = TempDirGuard::new();
+        let temp_cfg = get_temp_config_path();
         let mut mock_vfs = MockVfs::new();
         // Expectations:
         // 0. Config file reading (returns error to use default)
         mock_vfs
             .expect_read_file()
-            .with(mockall::predicate::eq("config.json"))
+            .with(mockall::predicate::eq(temp_cfg.clone()))
             .times(1)
             .returning(|_| Err(anyhow::anyhow!("No config")));
 
@@ -481,6 +468,7 @@ mod tests {
             });
 
         let mut manager = AppStateManager::new("/left".to_string(), "/right".to_string());
+        manager.config_path = temp_cfg.clone();
         manager.init(&mock_vfs).await.unwrap();
 
         assert_eq!(manager.active_pane().entries[0].name, "dir_a");
@@ -489,15 +477,16 @@ mod tests {
         manager.handle_enter(&mock_vfs).await.unwrap();
         assert_eq!(manager.active_pane().current_path, "/left/dir_a");
         assert_eq!(manager.active_pane().entries[0].name, "..");
+        let _ = std::fs::remove_file(temp_cfg);
     }
 
     #[tokio::test]
     async fn test_manager_go_to_path() {
-        let _guard = TempDirGuard::new();
+        let temp_cfg = get_temp_config_path();
         let mut mock_vfs = MockVfs::new();
         mock_vfs
             .expect_read_file()
-            .with(mockall::predicate::eq("config.json"))
+            .with(mockall::predicate::eq(temp_cfg.clone()))
             .times(1)
             .returning(|_| Err(anyhow::anyhow!("No config")));
 
@@ -526,6 +515,7 @@ mod tests {
             });
 
         let mut manager = AppStateManager::new("/left".to_string(), "/right".to_string());
+        manager.config_path = temp_cfg.clone();
         manager.init(&mock_vfs).await.unwrap();
 
         manager.start_go_to_path();
@@ -538,15 +528,16 @@ mod tests {
         assert_eq!(manager.mode, InputMode::Normal);
         assert_eq!(manager.active_pane().current_path, "/new_path");
         assert_eq!(manager.active_pane().entries[0].name, "file.txt");
+        let _ = std::fs::remove_file(temp_cfg);
     }
 
     #[tokio::test]
     async fn test_manager_open_text_file() {
-        let _guard = TempDirGuard::new();
+        let temp_cfg = get_temp_config_path();
         let mut mock_vfs = MockVfs::new();
         mock_vfs
             .expect_read_file()
-            .with(mockall::predicate::eq("config.json"))
+            .with(mockall::predicate::eq(temp_cfg.clone()))
             .times(1)
             .returning(|_| Err(anyhow::anyhow!("No config")));
 
@@ -575,6 +566,7 @@ mod tests {
             .returning(|_| Ok("line 1\nline 2\nline 3".to_string()));
 
         let mut manager = AppStateManager::new("/left".to_string(), "/right".to_string());
+        manager.config_path = temp_cfg.clone();
         manager.init(&mock_vfs).await.unwrap();
 
         assert_eq!(manager.active_pane().entries[0].name, "readme.md");
@@ -588,15 +580,16 @@ mod tests {
         assert_eq!(viewer.file_name, "readme.md");
         assert_eq!(viewer.lines, vec!["line 1", "line 2", "line 3"]);
         assert_eq!(viewer.scroll_offset, 0);
+        let _ = std::fs::remove_file(temp_cfg);
     }
 
     #[tokio::test]
     async fn test_manager_open_unsupported_file() {
-        let _guard = TempDirGuard::new();
+        let temp_cfg = get_temp_config_path();
         let mut mock_vfs = MockVfs::new();
         mock_vfs
             .expect_read_file()
-            .with(mockall::predicate::eq("config.json"))
+            .with(mockall::predicate::eq(temp_cfg.clone()))
             .times(1)
             .returning(|_| Err(anyhow::anyhow!("No config")));
 
@@ -619,6 +612,7 @@ mod tests {
             .returning(|_| Ok(vec![]));
 
         let mut manager = AppStateManager::new("/left".to_string(), "/right".to_string());
+        manager.config_path = temp_cfg.clone();
         manager.init(&mock_vfs).await.unwrap();
 
         assert_eq!(manager.active_pane().entries[0].name, "image.png");
@@ -634,6 +628,7 @@ mod tests {
             .as_ref()
             .unwrap()
             .contains("Unsupported file type"));
+        let _ = std::fs::remove_file(temp_cfg);
     }
 
     #[tokio::test]
@@ -755,19 +750,25 @@ mod tests {
     #[tokio::test]
     async fn test_config_caching_behavior() {
         use std::env;
-        use std::fs::File;
+        use std::fs::{create_dir_all, File};
 
-        let _guard = TempDirGuard::new();
-        let current_temp_dir = env::current_dir().unwrap();
+        let temp_cfg = get_temp_config_path();
 
-        let code_path = current_temp_dir.join("code");
+        let unique_id = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let temp_dir = env::temp_dir().join(format!("mock_path_cache_{}", unique_id));
+        create_dir_all(&temp_dir).unwrap();
+
+        let code_path = temp_dir.join("code");
         File::create(&code_path).unwrap();
 
         // Mock Vfs
         let mut mock_vfs = MockVfs::new();
         mock_vfs
             .expect_read_file()
-            .with(mockall::predicate::eq("config.json"))
+            .with(mockall::predicate::eq(temp_cfg.clone()))
             .times(1)
             .returning(|_| Err(anyhow::anyhow!("No config")));
 
@@ -783,9 +784,10 @@ mod tests {
             .returning(|_| Ok(vec![]));
 
         let old_path = env::var_os("PATH");
-        env::set_var("PATH", current_temp_dir.to_str().unwrap());
+        env::set_var("PATH", temp_dir.to_str().unwrap());
 
         let mut manager = AppStateManager::new("/left".to_string(), "/right".to_string());
+        manager.config_path = temp_cfg.clone();
         let init_res = manager.init(&mock_vfs).await;
 
         // Restore PATH
@@ -794,6 +796,11 @@ mod tests {
         } else {
             env::remove_var("PATH");
         }
+
+        // Clean up
+        let _ = std::fs::remove_file(code_path);
+        let _ = std::fs::remove_dir(temp_dir);
+        let _ = std::fs::remove_file(temp_cfg);
 
         init_res.unwrap();
 
