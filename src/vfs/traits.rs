@@ -29,4 +29,7 @@ pub trait Vfs: Send + Sync {
     
     /// Reads a directory and returns a list of its entries.
     async fn read_dir(&self, path: &str) -> Result<Vec<FileMetadata>>;
+
+    /// Reads a file and returns its content.
+    async fn read_file(&self, path: &str) -> Result<String>;
 }
