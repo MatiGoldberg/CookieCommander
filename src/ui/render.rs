@@ -1,5 +1,4 @@
-use crate::state::manager::{AppStateManager, InputMode};
-use crate::state::pane::PaneState;
+use crate::state::{AppStateManager, InputMode, PaneState};
 use crate::vfs::FileType;
 use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
