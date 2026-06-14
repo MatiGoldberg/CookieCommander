@@ -23,5 +23,6 @@
   ],
   "editors": {
     "vscode": "/usr/local/bin/code"
-  }
+  },
+  "max_prettify_size_kb": 512
 }

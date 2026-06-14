@@ -32,4 +32,7 @@ pub trait Vfs: Send + Sync {
 
     /// Reads a file and returns its content.
     async fn read_file(&self, path: &str) -> Result<String>;
+
+    /// Writes content to a file, creating it if it doesn't exist or overwriting it if it does.
+    async fn write_file(&self, path: &str, content: &str) -> Result<()>;
 }

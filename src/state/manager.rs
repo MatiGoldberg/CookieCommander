@@ -10,6 +10,7 @@ pub enum InputMode {
     Normal,
     GoToPath,
     FileViewer,
+    FileViewerSavePrompt,
 }
 
 #[derive(Debug, Clone)]
@@ -18,6 +19,11 @@ pub struct FileViewerState {
     pub file_name: String,
     pub lines: Vec<String>,
     pub scroll_offset: usize,
+    pub is_dirty: bool,
+}
+
+fn default_max_prettify_size_kb() -> usize {
+    512
 }
 
 fn serialize_sorted_set<S>(set: &HashSet<String>, serializer: S) -> Result<S::Ok, S::Error>
@@ -35,6 +41,8 @@ pub struct AppConfig {
     pub text_extensions: HashSet<String>,
     #[serde(default)]
     pub editors: HashMap<String, String>,
+    #[serde(default = "default_max_prettify_size_kb")]
+    pub max_prettify_size_kb: usize,
 }
 
 impl Default for AppConfig {
@@ -46,6 +54,7 @@ impl Default for AppConfig {
         Self {
             text_extensions: extensions.into_iter().map(String::from).collect(),
             editors: HashMap::new(),
+            max_prettify_size_kb: 512,
         }
     }
 }
@@ -255,6 +264,7 @@ impl AppStateManager {
                                 file_name: name,
                                 lines,
                                 scroll_offset: 0,
+                                is_dirty: false,
                             });
                             self.mode = InputMode::FileViewer;
                             self.status_message = None;
@@ -392,6 +402,77 @@ impl AppStateManager {
         } else {
             self.status_message = Some("Error: No editor is defined".to_string());
         }
+    }
+
+    pub fn prettify_current_file(&mut self) -> Result<()> {
+        let viewer = match &mut self.file_viewer {
+            Some(v) => v,
+            None => return Ok(()),
+        };
+
+        let path = Path::new(&viewer.file_path);
+        let ext = path.extension()
+            .and_then(|e| e.to_str())
+            .unwrap_or("")
+            .to_lowercase();
+
+        if let Some(prettifier) = crate::prettify::get_prettifier(&ext) {
+            let content = viewer.lines.join("\n");
+            
+            // Check file size constraint
+            let size_bytes = content.len();
+            let max_bytes = self.config.max_prettify_size_kb * 1024;
+            if size_bytes > max_bytes {
+                self.status_message = Some(format!(
+                    "File size ({:.1} KB) exceeds max prettify size ({} KB)",
+                    size_bytes as f64 / 1024.0, self.config.max_prettify_size_kb
+                ));
+                return Ok(());
+            }
+
+            if prettifier.can_prettify(&content) {
+                match prettifier.prettify(&content) {
+                    Ok(pretty) => {
+                        viewer.lines = pretty.lines().map(String::from).collect();
+                        viewer.is_dirty = true;
+                        viewer.scroll_offset = 0;
+                        self.status_message = Some("File prettified. Press Esc/q to save.".to_string());
+                    }
+                    Err(e) => {
+                        self.status_message = Some(format!("Prettification failed: {}", e));
+                    }
+                }
+            } else {
+                self.status_message = Some("File is already prettified or not in candidate format.".to_string());
+            }
+        } else {
+            self.status_message = Some(format!("No prettifier available for extension .{}", ext));
+        }
+
+        Ok(())
+    }
+
+    pub async fn save_viewer_content(&mut self, vfs: &dyn Vfs) -> Result<()> {
+        let (file_path, content) = match &self.file_viewer {
+            Some(viewer) if viewer.is_dirty => {
+                (viewer.file_path.clone(), viewer.lines.join("\n"))
+            }
+            _ => return Ok(()),
+        };
+
+        match vfs.write_file(&file_path, &content).await {
+            Ok(_) => {
+                if let Some(viewer) = &mut self.file_viewer {
+                    viewer.is_dirty = false;
+                }
+                self.status_message = Some(format!("Successfully saved changes to {}", file_path));
+            }
+            Err(e) => {
+                self.status_message = Some(format!("Failed to save file: {}", e));
+            }
+        }
+
+        Ok(())
     }
 }
 
@@ -639,6 +720,7 @@ mod tests {
             file_name: "file.txt".to_string(),
             lines: (1..=20).map(|i| format!("line {}", i)).collect(),
             scroll_offset: 0,
+            is_dirty: false,
         });
         manager.mode = InputMode::FileViewer;
 
@@ -672,6 +754,7 @@ mod tests {
             file_name: "file.txt".to_string(),
             lines: vec!["hello".to_string()],
             scroll_offset: 0,
+            is_dirty: false,
         });
         manager.mode = InputMode::FileViewer;
 
@@ -693,6 +776,7 @@ mod tests {
             file_name: "file.txt".to_string(),
             lines: vec!["hello".to_string()],
             scroll_offset: 0,
+            is_dirty: false,
         });
         manager.mode = InputMode::FileViewer;
 
@@ -825,13 +909,90 @@ mod tests {
         let cfg = AppConfig {
             text_extensions: extensions,
             editors: HashMap::new(),
+            max_prettify_size_kb: 512,
         };
 
         let json_str = serde_json::to_string(&cfg).unwrap();
 
         assert_eq!(
             json_str,
-            r#"{"text_extensions":["bat","c","json","rs"],"editors":{}}"#
+            r#"{"text_extensions":["bat","c","json","rs"],"editors":{},"max_prettify_size_kb":512}"#
         );
+    }
+
+    #[tokio::test]
+    async fn test_manager_prettify_json_success() {
+        let mut manager = AppStateManager::new("/left".to_string(), "/right".to_string());
+        manager.file_viewer = Some(FileViewerState {
+            file_path: "/left/data.json".to_string(),
+            file_name: "data.json".to_string(),
+            lines: vec![r#"{"a":1,"b":2}"#.to_string()],
+            scroll_offset: 0,
+            is_dirty: false,
+        });
+        manager.mode = InputMode::FileViewer;
+
+        manager.prettify_current_file().unwrap();
+
+        let viewer = manager.file_viewer.as_ref().unwrap();
+        assert!(viewer.is_dirty);
+        assert!(viewer.lines.len() > 1);
+        
+        // Verify formatted output
+        let joined = viewer.lines.join("\n");
+        let parsed: serde_json::Value = serde_json::from_str(&joined).unwrap();
+        assert_eq!(parsed["a"], 1);
+        assert_eq!(parsed["b"], 2);
+    }
+
+    #[tokio::test]
+    async fn test_manager_prettify_json_too_large() {
+        let mut manager = AppStateManager::new("/left".to_string(), "/right".to_string());
+        manager.config.max_prettify_size_kb = 1; // 1 KB
+        
+        // Construct a JSON that is larger than 1KB (1024 bytes)
+        let large_string = "a".repeat(1100);
+        let large_json = format!(r#"{{"data":"{}"}}"#, large_string);
+        
+        manager.file_viewer = Some(FileViewerState {
+            file_path: "/left/large.json".to_string(),
+            file_name: "large.json".to_string(),
+            lines: vec![large_json],
+            scroll_offset: 0,
+            is_dirty: false,
+        });
+        manager.mode = InputMode::FileViewer;
+
+        manager.prettify_current_file().unwrap();
+
+        let viewer = manager.file_viewer.as_ref().unwrap();
+        assert!(!viewer.is_dirty);
+        assert_eq!(viewer.lines.len(), 1); // unformatted
+        assert!(manager.status_message.as_ref().unwrap().contains("exceeds max prettify size"));
+    }
+
+    #[tokio::test]
+    async fn test_manager_prettify_json_save() {
+        let mut mock_vfs = MockVfs::new();
+        mock_vfs.expect_write_file()
+            .with(mockall::predicate::eq("/left/data.json"), mockall::predicate::eq("line 1\nline 2"))
+            .times(1)
+            .returning(|_, _| Ok(()));
+
+        let mut manager = AppStateManager::new("/left".to_string(), "/right".to_string());
+        manager.file_viewer = Some(FileViewerState {
+            file_path: "/left/data.json".to_string(),
+            file_name: "data.json".to_string(),
+            lines: vec!["line 1".to_string(), "line 2".to_string()],
+            scroll_offset: 0,
+            is_dirty: true,
+        });
+        manager.mode = InputMode::FileViewer;
+
+        manager.save_viewer_content(&mock_vfs).await.unwrap();
+
+        let viewer = manager.file_viewer.as_ref().unwrap();
+        assert!(!viewer.is_dirty);
+        assert!(manager.status_message.as_ref().unwrap().contains("Successfully saved changes"));
     }
 }
