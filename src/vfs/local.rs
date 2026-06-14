@@ -84,6 +84,11 @@ impl Vfs for LocalVfs {
         let bytes = tokio::fs::read(Path::new(path)).await?;
         Ok(String::from_utf8_lossy(&bytes).into_owned())
     }
+
+    async fn write_file(&self, path: &str, content: &str) -> Result<()> {
+        tokio::fs::write(Path::new(path), content).await?;
+        Ok(())
+    }
 }
 
 #[cfg(test)]
@@ -169,6 +174,23 @@ mod tests {
         assert!(content.contains("hello "));
         assert!(content.contains("world"));
         assert!(content.contains('\u{FFFD}')); // Replacement char
+
+        let _ = remove_file(file_path);
+    }
+
+    #[tokio::test]
+    async fn test_local_vfs_write_file() {
+        let unique_id = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let file_path = std::env::temp_dir().join(format!("test_write_{}.txt", unique_id));
+
+        let vfs = LocalVfs;
+        vfs.write_file(file_path.to_str().unwrap(), "written content").await.unwrap();
+
+        let content = std::fs::read_to_string(&file_path).unwrap();
+        assert_eq!(content, "written content");
 
         let _ = remove_file(file_path);
     }

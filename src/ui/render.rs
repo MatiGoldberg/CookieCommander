@@ -29,6 +29,9 @@ pub fn render(f: &mut Frame, state: &AppStateManager) {
         render_go_to_popup(f, size, state);
     } else if state.mode == InputMode::FileViewer {
         render_file_viewer(f, size, state);
+    } else if state.mode == InputMode::FileViewerSavePrompt {
+        render_file_viewer(f, size, state);
+        render_save_prompt_popup(f, size);
     }
 }
 
@@ -360,7 +363,13 @@ fn render_file_viewer(f: &mut Frame, area: Rect, state: &AppStateManager) {
         percentage
     );
 
-    let help_line = Line::from(vec![
+    let path = std::path::Path::new(&viewer.file_path);
+    let ext = path.extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("")
+        .to_lowercase();
+
+    let mut help_spans = vec![
         Span::styled(
             " Esc/q ",
             Style::default()
@@ -377,6 +386,20 @@ fn render_file_viewer(f: &mut Frame, area: Rect, state: &AppStateManager) {
                 .add_modifier(Modifier::BOLD),
         ),
         Span::raw(" Edit  "),
+    ];
+
+    if crate::prettify::get_prettifier(&ext).is_some() {
+        help_spans.push(Span::styled(
+            " p ",
+            Style::default()
+                .bg(Color::Yellow)
+                .fg(Color::Black)
+                .add_modifier(Modifier::BOLD),
+        ));
+        help_spans.push(Span::raw(" Prettify  "));
+    }
+
+    help_spans.extend(vec![
         Span::styled(
             " Up/Down ",
             Style::default()
@@ -403,5 +426,27 @@ fn render_file_viewer(f: &mut Frame, area: Rect, state: &AppStateManager) {
         ),
     ]);
 
+    let help_line = Line::from(help_spans);
+
     f.render_widget(Paragraph::new(help_line), viewer_chunks[1]);
+}
+
+fn render_save_prompt_popup(f: &mut Frame, area: Rect) {
+    let popup_area = centered_rect(50, 15, area);
+
+    let popup_block = Block::default()
+        .title(Span::styled(" Save Confirmation ", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)))
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(Color::Yellow));
+
+    let prompt_para = Paragraph::new(vec![
+        Line::from(""),
+        Line::from(Span::styled("  Save prettified JSON changes?", Style::default().fg(Color::White))),
+        Line::from(""),
+        Line::from(Span::styled("  Press: [y] Yes | [n] No | [Esc] Cancel", Style::default().fg(Color::DarkGray))),
+    ])
+    .block(popup_block);
+
+    f.render_widget(Clear, popup_area); // Clears the background behind the popup
+    f.render_widget(prompt_para, popup_area);
 }

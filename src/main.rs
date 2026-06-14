@@ -1,3 +1,4 @@
+mod prettify;
 mod state;
 mod task_manager;
 mod ui;
@@ -111,7 +112,15 @@ async fn run_app<B: ratatui::backend::Backend>(
                         },
                         InputMode::FileViewer => match key.code {
                             KeyCode::Esc | KeyCode::Char('q') => {
-                                state.close_file_viewer();
+                                let is_dirty = state.file_viewer.as_ref().map(|v| v.is_dirty).unwrap_or(false);
+                                if is_dirty {
+                                    state.mode = InputMode::FileViewerSavePrompt;
+                                } else {
+                                    state.close_file_viewer();
+                                }
+                            }
+                            KeyCode::Char('p') => {
+                                state.prettify_current_file()?;
                             }
                             KeyCode::Char('e') => {
                                 state.open_in_editor();
@@ -136,6 +145,19 @@ async fn run_app<B: ratatui::backend::Backend>(
                                     visible_height.saturating_sub(2).max(1),
                                     visible_height,
                                 );
+                            }
+                            _ => {}
+                        },
+                        InputMode::FileViewerSavePrompt => match key.code {
+                            KeyCode::Char('y') | KeyCode::Char('Y') => {
+                                state.save_viewer_content(vfs).await?;
+                                state.close_file_viewer();
+                            }
+                            KeyCode::Char('n') | KeyCode::Char('N') => {
+                                state.close_file_viewer();
+                            }
+                            KeyCode::Esc | KeyCode::Char('q') => {
+                                state.mode = InputMode::FileViewer;
                             }
                             _ => {}
                         },
