@@ -1,24 +1,27 @@
 {
   "text_extensions": [
-    "cpp",
-    "json",
-    "css",
-    "toml",
-    "md",
-    "yml",
-    "ts",
-    "py",
-    "txt",
-    "csproj",
-    "html",
-    "rs",
-    "cs",
-    "h",
-    "sh",
+    "bat",
     "c",
-    "js",
-    "yaml",
+    "cpp",
+    "cs",
+    "csproj",
+    "css",
+    "h",
+    "html",
     "java",
-    "bat"
-  ]
+    "js",
+    "json",
+    "md",
+    "py",
+    "rs",
+    "sh",
+    "toml",
+    "ts",
+    "txt",
+    "yaml",
+    "yml"
+  ],
+  "editors": {
+    "vscode": "/usr/local/bin/code"
+  }
 }

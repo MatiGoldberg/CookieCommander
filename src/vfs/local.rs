@@ -10,11 +10,12 @@ pub struct LocalVfs;
 impl Vfs for LocalVfs {
     async fn metadata(&self, path: &str) -> Result<FileMetadata> {
         let path_obj = Path::new(path);
-        let name = path_obj.file_name()
+        let name = path_obj
+            .file_name()
             .and_then(|n| n.to_str())
             .unwrap_or(path)
             .to_string();
-        
+
         let meta = tokio::fs::metadata(path_obj).await?;
         let file_type = if meta.is_dir() {
             FileType::Directory
@@ -25,9 +26,9 @@ impl Vfs for LocalVfs {
         } else {
             FileType::Unknown
         };
-        
+
         let modified = meta.modified().ok();
-        
+
         Ok(FileMetadata {
             name,
             size: meta.len(),
@@ -39,7 +40,7 @@ impl Vfs for LocalVfs {
     async fn read_dir(&self, path: &str) -> Result<Vec<FileMetadata>> {
         let path_obj = Path::new(path);
         let mut entries = Vec::new();
-        
+
         // Add ".." entry if a parent exists and path is not "/" or empty
         if let Some(_parent) = path_obj.parent() {
             if path_obj != Path::new("/") && !path_obj.as_os_str().is_empty() {
@@ -51,7 +52,7 @@ impl Vfs for LocalVfs {
                 });
             }
         }
-        
+
         let mut dir = tokio::fs::read_dir(path_obj).await?;
         while let Some(entry) = dir.next_entry().await? {
             let name = entry.file_name().to_string_lossy().to_string();
@@ -65,9 +66,9 @@ impl Vfs for LocalVfs {
             } else {
                 FileType::Unknown
             };
-            
+
             let modified = meta.modified().ok();
-            
+
             entries.push(FileMetadata {
                 name,
                 size: meta.len(),
@@ -75,7 +76,7 @@ impl Vfs for LocalVfs {
                 modified,
             });
         }
-        
+
         Ok(entries)
     }
 
@@ -88,7 +89,7 @@ impl Vfs for LocalVfs {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::fs::{create_dir, write, remove_file, remove_dir};
+    use std::fs::{create_dir, remove_dir, remove_file, write};
 
     #[tokio::test]
     async fn test_local_vfs_metadata() {
@@ -118,7 +119,7 @@ mod tests {
             .as_nanos();
         let sub_dir = std::env::temp_dir().join(format!("subdir_{}", unique_id));
         create_dir(&sub_dir).unwrap();
-        
+
         let file_path = sub_dir.join("file.txt");
         write(&file_path, b"abc").unwrap();
 
@@ -128,7 +129,7 @@ mod tests {
         // Should contain ".." (parent) and "file.txt"
         assert!(entries.iter().any(|e| e.name == ".."));
         assert!(entries.iter().any(|e| e.name == "file.txt"));
-        
+
         let file_meta = entries.iter().find(|e| e.name == "file.txt").unwrap();
         assert_eq!(file_meta.size, 3);
         assert_eq!(file_meta.file_type, FileType::File);
