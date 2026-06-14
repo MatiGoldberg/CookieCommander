@@ -1,24 +1,25 @@
 {
   "text_extensions": [
-    "bat",
-    "ts",
-    "css",
     "csproj",
     "json",
+    "rs",
+    "toml",
+    "ts",
     "c",
+    "cs",
+    "css",
+    "java",
+    "sh",
+    "bat",
+    "py",
     "h",
     "txt",
-    "cs",
-    "java",
-    "html",
-    "yaml",
-    "toml",
-    "md",
-    "py",
-    "cpp",
-    "rs",
     "js",
+    "yaml",
     "yml",
-    "sh"
+    "xml",
+    "cpp",
+    "html",
+    "md"
   ]
 }
