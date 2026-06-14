@@ -42,9 +42,13 @@ fn render_header(f: &mut Frame, area: Rect) {
     ];
 
     let header_content = if area.width >= 100 {
+        let max_len = ascii_art.iter().map(|s| s.len()).max().unwrap_or(0);
         let lines: Vec<Line> = ascii_art
             .into_iter()
-            .map(|l| Line::from(Span::styled(l, Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))))
+            .map(|l| {
+                let padded = format!("{:width$}", l, width = max_len);
+                Line::from(Span::styled(padded, Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)))
+            })
             .collect();
         lines
     } else {
