@@ -20,8 +20,18 @@ pub struct FileViewerState {
     pub scroll_offset: usize,
 }
 
+fn serialize_sorted_set<S>(set: &HashSet<String>, serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: serde::Serializer,
+{
+    let mut vec: Vec<&String> = set.iter().collect();
+    vec.sort();
+    serializer.collect_seq(vec)
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AppConfig {
+    #[serde(serialize_with = "serialize_sorted_set")]
     pub text_extensions: HashSet<String>,
     #[serde(default)]
     pub editors: HashMap<String, String>,
@@ -388,6 +398,32 @@ mod tests {
     use super::*;
     use crate::vfs::{FileMetadata, FileType, MockVfs};
 
+    struct TempDirGuard {
+        old_cwd: std::path::PathBuf,
+        temp_dir: std::path::PathBuf,
+    }
+
+    impl TempDirGuard {
+        fn new() -> Self {
+            let unique_id = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos();
+            let temp_dir = std::env::temp_dir().join(format!("test_run_{}", unique_id));
+            std::fs::create_dir_all(&temp_dir).unwrap();
+            let old_cwd = std::env::current_dir().unwrap();
+            std::env::set_current_dir(&temp_dir).unwrap();
+            Self { old_cwd, temp_dir }
+        }
+    }
+
+    impl Drop for TempDirGuard {
+        fn drop(&mut self) {
+            let _ = std::env::set_current_dir(&self.old_cwd);
+            let _ = std::fs::remove_dir_all(&self.temp_dir);
+        }
+    }
+
     #[tokio::test]
     async fn test_manager_pane_switching() {
         let mut manager = AppStateManager::new("/left".to_string(), "/right".to_string());
@@ -401,6 +437,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_manager_handle_enter_directory() {
+        let _guard = TempDirGuard::new();
         let mut mock_vfs = MockVfs::new();
         // Expectations:
         // 0. Config file reading (returns error to use default)
@@ -456,6 +493,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_manager_go_to_path() {
+        let _guard = TempDirGuard::new();
         let mut mock_vfs = MockVfs::new();
         mock_vfs
             .expect_read_file()
@@ -504,6 +542,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_manager_open_text_file() {
+        let _guard = TempDirGuard::new();
         let mut mock_vfs = MockVfs::new();
         mock_vfs
             .expect_read_file()
@@ -553,6 +592,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_manager_open_unsupported_file() {
+        let _guard = TempDirGuard::new();
         let mut mock_vfs = MockVfs::new();
         mock_vfs
             .expect_read_file()
@@ -715,16 +755,12 @@ mod tests {
     #[tokio::test]
     async fn test_config_caching_behavior() {
         use std::env;
-        use std::fs::{create_dir_all, File};
+        use std::fs::File;
 
-        let unique_id = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let temp_dir = env::temp_dir().join(format!("mock_path_cache_{}", unique_id));
-        create_dir_all(&temp_dir).unwrap();
+        let _guard = TempDirGuard::new();
+        let current_temp_dir = env::current_dir().unwrap();
 
-        let code_path = temp_dir.join("code");
+        let code_path = current_temp_dir.join("code");
         File::create(&code_path).unwrap();
 
         // Mock Vfs
@@ -747,28 +783,17 @@ mod tests {
             .returning(|_| Ok(vec![]));
 
         let old_path = env::var_os("PATH");
-        env::set_var("PATH", temp_dir.to_str().unwrap());
+        env::set_var("PATH", current_temp_dir.to_str().unwrap());
 
         let mut manager = AppStateManager::new("/left".to_string(), "/right".to_string());
-
-        // Temporarily change directory to temp_dir so config.json is written there instead of workspace!
-        let old_cwd = env::current_dir().unwrap();
-        env::set_current_dir(&temp_dir).unwrap();
-
         let init_res = manager.init(&mock_vfs).await;
 
-        // Restore cwd and PATH
-        env::set_current_dir(&old_cwd).unwrap();
+        // Restore PATH
         if let Some(p) = old_path {
             env::set_var("PATH", p);
         } else {
             env::remove_var("PATH");
         }
-
-        // Clean up
-        let _ = std::fs::remove_file(code_path);
-        let _ = std::fs::remove_file(temp_dir.join("config.json"));
-        let _ = std::fs::remove_dir(temp_dir);
 
         init_res.unwrap();
 
@@ -780,5 +805,26 @@ mod tests {
             .get("vscode")
             .unwrap()
             .contains("code"));
+    }
+
+    #[tokio::test]
+    async fn test_config_serialization_sorted() {
+        let mut extensions = HashSet::new();
+        extensions.insert("rs".to_string());
+        extensions.insert("json".to_string());
+        extensions.insert("c".to_string());
+        extensions.insert("bat".to_string());
+
+        let cfg = AppConfig {
+            text_extensions: extensions,
+            editors: HashMap::new(),
+        };
+
+        let json_str = serde_json::to_string(&cfg).unwrap();
+
+        assert_eq!(
+            json_str,
+            r#"{"text_extensions":["bat","c","json","rs"],"editors":{}}"#
+        );
     }
 }
