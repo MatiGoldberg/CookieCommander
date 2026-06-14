@@ -23,7 +23,7 @@ async fn main() -> Result<()> {
         .to_string();
 
     // 2. Initialize VFS and State
-    let vfs = LocalVfs::default();
+    let vfs = LocalVfs;
     let mut state = AppStateManager::new(current_dir.clone(), current_dir);
     state.init(&vfs).await?;
 
@@ -90,17 +90,7 @@ async fn run_app<B: ratatui::backend::Backend>(
                                 state.handle_enter(vfs).await?;
                             }
                             KeyCode::Backspace => {
-                                // Navigate up standard shortcut
-                                let mut active_pane = state.active_pane_mut().clone();
-                                active_pane.selected_index = 0;
-                                // We simulate entering ".." by setting selected_index to 0
-                                // since ".." is always the first entry if it exists.
-                                if let Some(first_entry) = active_pane.entries.first() {
-                                    if first_entry.name == ".." {
-                                        state.active_pane_mut().selected_index = 0;
-                                        state.handle_enter(vfs).await?;
-                                    }
-                                }
+                                state.navigate_up_directory(vfs).await?;
                             }
                             _ => {}
                         },

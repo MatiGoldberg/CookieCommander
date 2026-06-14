@@ -149,6 +149,16 @@ impl AppStateManager {
         self.mode = InputMode::Normal;
         self.input_buffer.clear();
     }
+
+    pub async fn navigate_up_directory(&mut self, vfs: &dyn Vfs) -> Result<()> {
+        if let Some(first_entry) = self.active_pane().entries.first() {
+            if first_entry.name == ".." {
+                self.active_pane_mut().selected_index = 0;
+                self.handle_enter(vfs).await?;
+            }
+        }
+        Ok(())
+    }
 }
 
 #[cfg(test)]
