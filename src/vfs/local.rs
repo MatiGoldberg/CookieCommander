@@ -78,6 +78,11 @@ impl Vfs for LocalVfs {
         
         Ok(entries)
     }
+
+    async fn read_file(&self, path: &str) -> Result<String> {
+        let bytes = tokio::fs::read(Path::new(path)).await?;
+        Ok(String::from_utf8_lossy(&bytes).into_owned())
+    }
 }
 
 #[cfg(test)]
@@ -130,5 +135,40 @@ mod tests {
 
         let _ = remove_file(file_path);
         let _ = remove_dir(sub_dir);
+    }
+
+    #[tokio::test]
+    async fn test_local_vfs_read_file() {
+        let unique_id = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let file_path = std::env::temp_dir().join(format!("test_read_{}.txt", unique_id));
+        write(&file_path, b"test content").unwrap();
+
+        let vfs = LocalVfs;
+        let content = vfs.read_file(file_path.to_str().unwrap()).await.unwrap();
+        assert_eq!(content, "test content");
+
+        let _ = remove_file(file_path);
+    }
+
+    #[tokio::test]
+    async fn test_local_vfs_read_file_lossy_utf8() {
+        let unique_id = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let file_path = std::env::temp_dir().join(format!("test_read_lossy_{}.txt", unique_id));
+        // Invalid UTF-8 sequence (0xff is invalid in UTF-8)
+        write(&file_path, b"hello \xff world").unwrap();
+
+        let vfs = LocalVfs;
+        let content = vfs.read_file(file_path.to_str().unwrap()).await.unwrap();
+        assert!(content.contains("hello "));
+        assert!(content.contains("world"));
+        assert!(content.contains('\u{FFFD}')); // Replacement char
+
+        let _ = remove_file(file_path);
     }
 }

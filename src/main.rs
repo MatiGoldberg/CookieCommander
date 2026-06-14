@@ -109,6 +109,30 @@ async fn run_app<B: ratatui::backend::Backend>(
                             }
                             _ => {}
                         },
+                        InputMode::FileViewer => match key.code {
+                            KeyCode::Esc | KeyCode::Char('q') => {
+                                state.close_file_viewer();
+                            }
+                            KeyCode::Up => {
+                                state.scroll_viewer_up(1);
+                            }
+                            KeyCode::Down => {
+                                let height = terminal.size().map(|s| s.height).unwrap_or(24);
+                                let visible_height = (height.saturating_sub(10) as usize).max(1);
+                                state.scroll_viewer_down(1, visible_height);
+                            }
+                            KeyCode::PageUp => {
+                                let height = terminal.size().map(|s| s.height).unwrap_or(24);
+                                let visible_height = (height.saturating_sub(10) as usize).max(1);
+                                state.scroll_viewer_up(visible_height.saturating_sub(2).max(1));
+                            }
+                            KeyCode::PageDown => {
+                                let height = terminal.size().map(|s| s.height).unwrap_or(24);
+                                let visible_height = (height.saturating_sub(10) as usize).max(1);
+                                state.scroll_viewer_down(visible_height.saturating_sub(2).max(1), visible_height);
+                            }
+                            _ => {}
+                        },
                     }
                 }
             }

@@ -27,6 +27,8 @@ pub fn render(f: &mut Frame, state: &AppStateManager) {
 
     if state.mode == InputMode::GoToPath {
         render_go_to_popup(f, size, state);
+    } else if state.mode == InputMode::FileViewer {
+        render_file_viewer(f, size, state);
     }
 }
 
@@ -235,4 +237,83 @@ fn centered_rect(percent_x: u16, percent_y: u16, r: Rect) -> Rect {
             Constraint::Percentage((100 - percent_x) / 2),
         ])
         .split(popup_layout[1])[1]
+}
+
+fn render_file_viewer(f: &mut Frame, area: Rect, state: &AppStateManager) {
+    let viewer = match &state.file_viewer {
+        Some(v) => v,
+        None => return,
+    };
+
+    let viewer_area = centered_rect(95, 95, area);
+    f.render_widget(Clear, viewer_area); // Clears the background
+
+    // Split the viewer area into Content and a small Footer help bar
+    let viewer_chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Min(3),
+            Constraint::Length(1), // Help bar
+        ])
+        .split(viewer_area);
+
+    let total_lines = viewer.lines.len();
+    
+    // Main block for the content
+    let block = Block::default()
+        .title(Span::styled(
+            format!(" File Viewer: {} ", viewer.file_name),
+            Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD),
+        ))
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(Color::Cyan));
+
+    let inner_area = block.inner(viewer_chunks[0]);
+    let height = inner_area.height as usize;
+
+    let start = viewer.scroll_offset;
+    let end = (start + height).min(total_lines);
+
+    let display_lines: Vec<Line> = viewer.lines[start..end]
+        .iter()
+        .map(|line| Line::from(line.as_str()))
+        .collect();
+
+    let paragraph = if total_lines == 0 {
+        Paragraph::new(vec![Line::from(Span::styled(
+            "~ Empty File ~",
+            Style::default().fg(Color::DarkGray).add_modifier(Modifier::ITALIC),
+        ))])
+    } else {
+        Paragraph::new(display_lines)
+    };
+
+    f.render_widget(paragraph.block(block), viewer_chunks[0]);
+
+    // Help bar rendering
+    let percentage = if total_lines > 0 {
+        (end * 100) / total_lines
+    } else {
+        100
+    };
+    let scroll_info = format!(
+        "Line {}-{} of {} ({}%)",
+        if total_lines == 0 { 0 } else { start + 1 },
+        end,
+        total_lines,
+        percentage
+    );
+
+    let help_line = Line::from(vec![
+        Span::styled(" Esc/q ", Style::default().bg(Color::Yellow).fg(Color::Black).add_modifier(Modifier::BOLD)),
+        Span::raw(" Close Viewer  "),
+        Span::styled(" Up/Down ", Style::default().bg(Color::Yellow).fg(Color::Black).add_modifier(Modifier::BOLD)),
+        Span::raw(" Scroll Line  "),
+        Span::styled(" PgUp/PgDn ", Style::default().bg(Color::Yellow).fg(Color::Black).add_modifier(Modifier::BOLD)),
+        Span::raw(" Scroll Page  "),
+        Span::styled(format!("  {}  ", scroll_info), Style::default().fg(Color::LightCyan)),
+        Span::styled(format!("  {}  ", viewer.file_path), Style::default().fg(Color::DarkGray)),
+    ]);
+
+    f.render_widget(Paragraph::new(help_line), viewer_chunks[1]);
 }
