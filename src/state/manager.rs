@@ -115,9 +115,6 @@ impl SupportedEditor {
 
                 None
             }
-=======
-            max_prettify_size_kb: 512,
->>>>>>> 77b6d70 (implementation)
         }
     }
 }
