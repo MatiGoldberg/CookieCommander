@@ -46,7 +46,7 @@ fn render_header(f: &mut Frame, area: Rect) {
 
     let header_content = if area.width >= 100 {
         let max_len = ascii_art.iter().map(|s| s.len()).max().unwrap_or(0);
-        let lines: Vec<Line> = ascii_art
+        let mut lines: Vec<Line> = ascii_art
             .into_iter()
             .map(|l| {
                 let padded = format!("{:width$}", l, width = max_len);
@@ -58,15 +58,25 @@ fn render_header(f: &mut Frame, area: Rect) {
                 ))
             })
             .collect();
+        lines.push(Line::from(Span::styled(
+            format!("v{}", env!("CARGO_PKG_VERSION")),
+            Style::default().fg(Color::DarkGray),
+        )));
         lines
     } else {
         vec![
-            Line::from(Span::styled(
-                "CookieCommander",
-                Style::default()
-                    .fg(Color::Cyan)
-                    .add_modifier(Modifier::BOLD),
-            )),
+            Line::from(vec![
+                Span::styled(
+                    "CookieCommander",
+                    Style::default()
+                        .fg(Color::Cyan)
+                        .add_modifier(Modifier::BOLD),
+                ),
+                Span::styled(
+                    format!(" v{}", env!("CARGO_PKG_VERSION")),
+                    Style::default().fg(Color::DarkGray),
+                ),
+            ]),
             Line::from(Span::styled(
                 "Orthodox File Manager",
                 Style::default().fg(Color::DarkGray),

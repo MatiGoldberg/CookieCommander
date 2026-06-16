@@ -149,6 +149,11 @@ if [ "$CLEAN" = true ]; then
     echo -e "${GREEN}✅ Clean complete.${NC}"
 fi
 
+# Step 1.5: Auto-increment version build/patch number
+echo -e "${GREEN}▶ Auto-incrementing build version...${NC}"
+NEW_VER=$("$SCRIPT_DIR/increment_version.sh" patch)
+echo -e "${BLUE}ℹ️  New version: $NEW_VER${NC}"
+
 # Step 2: Build
 echo -e "${GREEN}▶ Building project in development mode...${NC}"
 if [ "$SAVE_LOGS" = true ]; then
