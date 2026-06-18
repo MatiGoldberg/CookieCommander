@@ -35,4 +35,16 @@ pub trait Vfs: Send + Sync {
 
     /// Writes content to a file, creating it if it doesn't exist or overwriting it if it does.
     async fn write_file(&self, path: &str, content: &str) -> Result<()>;
+
+    /// Creates a directory.
+    async fn create_dir(&self, path: &str) -> Result<()>;
+
+    /// Deletes a file.
+    async fn remove_file(&self, path: &str) -> Result<()>;
+
+    /// Deletes a directory and all its contents recursively.
+    async fn remove_dir_all(&self, path: &str) -> Result<()>;
+
+    /// Copies a single file from one path to another.
+    async fn copy_file(&self, from: &str, to: &str) -> Result<()>;
 }

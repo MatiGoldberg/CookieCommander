@@ -93,6 +93,15 @@ async fn run_app<B: ratatui::backend::Backend>(
                             KeyCode::Backspace => {
                                 state.navigate_up_directory(vfs).await?;
                             }
+                            KeyCode::Char(' ') => {
+                                state.active_pane_mut().toggle_selection();
+                            }
+                            KeyCode::Delete | KeyCode::Char('d') => {
+                                state.mode = InputMode::DeleteConfirm;
+                            }
+                            KeyCode::F(5) | KeyCode::Char('c') => {
+                                state.copy_selected(vfs).await?;
+                            }
                             _ => {}
                         },
                         InputMode::GoToPath => match key.code {
@@ -158,6 +167,16 @@ async fn run_app<B: ratatui::backend::Backend>(
                             }
                             KeyCode::Esc | KeyCode::Char('q') => {
                                 state.mode = InputMode::FileViewer;
+                            }
+                            _ => {}
+                        },
+                        InputMode::DeleteConfirm => match key.code {
+                            KeyCode::Char('y') | KeyCode::Char('Y') => {
+                                state.delete_selected(vfs).await?;
+                                state.mode = InputMode::Normal;
+                            }
+                            KeyCode::Char('n') | KeyCode::Char('N') | KeyCode::Esc => {
+                                state.mode = InputMode::Normal;
                             }
                             _ => {}
                         },

@@ -89,6 +89,26 @@ impl Vfs for LocalVfs {
         tokio::fs::write(Path::new(path), content).await?;
         Ok(())
     }
+
+    async fn create_dir(&self, path: &str) -> Result<()> {
+        tokio::fs::create_dir(Path::new(path)).await?;
+        Ok(())
+    }
+
+    async fn remove_file(&self, path: &str) -> Result<()> {
+        tokio::fs::remove_file(Path::new(path)).await?;
+        Ok(())
+    }
+
+    async fn remove_dir_all(&self, path: &str) -> Result<()> {
+        tokio::fs::remove_dir_all(Path::new(path)).await?;
+        Ok(())
+    }
+
+    async fn copy_file(&self, from: &str, to: &str) -> Result<()> {
+        tokio::fs::copy(Path::new(from), Path::new(to)).await?;
+        Ok(())
+    }
 }
 
 #[cfg(test)]
