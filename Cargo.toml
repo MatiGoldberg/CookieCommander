@@ -1,6 +1,6 @@
 [package]
 name = "cookie_commander"
-version = "0.0.1"
+version = "0.1.0"
 edition = "2021"
 authors = ["CookieCommander Contributors"]
 description = "Terminal-based orthodox file manager for macOS"

@@ -11,6 +11,7 @@ pub enum InputMode {
     GoToPath,
     FileViewer,
     FileViewerSavePrompt,
+    DeleteConfirm,
 }
 
 #[derive(Debug, Clone)]
@@ -281,6 +282,7 @@ impl AppStateManager {
         }
 
         let active = self.active_pane_mut();
+        active.clear_selections();
         if name == ".." {
             if let Some(parent) = Path::new(&active.current_path).parent() {
                 if let Some(p_str) = parent.to_str() {
@@ -341,6 +343,7 @@ impl AppStateManager {
 
             active.current_path = path_to_set;
             active.selected_index = 0;
+            active.clear_selections();
 
             let res = active.refresh(vfs).await;
             if res.is_err() {
@@ -474,6 +477,157 @@ impl AppStateManager {
 
         Ok(())
     }
+
+    pub async fn delete_selected(&mut self, vfs: &dyn Vfs) -> Result<()> {
+        let active = self.active_pane_mut();
+        let current_dir = active.current_path.clone();
+        let mut targets = Vec::new();
+
+        if !active.selections.is_empty() {
+            for name in &active.selections {
+                let path = Path::new(&current_dir).join(name).to_string_lossy().to_string();
+                targets.push((path, name.clone()));
+            }
+        } else if let Some(entry) = active.selected_entry() {
+            if entry.name != ".." {
+                let path = Path::new(&current_dir).join(&entry.name).to_string_lossy().to_string();
+                targets.push((path, entry.name.clone()));
+            }
+        }
+
+        if targets.is_empty() {
+            self.status_message = Some("No items to delete.".to_string());
+            return Ok(());
+        }
+
+        let mut deleted_count = 0;
+        let mut errors = Vec::new();
+
+        for (path, name) in targets {
+            match vfs.metadata(&path).await {
+                Ok(meta) => {
+                    let res = if meta.file_type == crate::vfs::FileType::Directory {
+                        vfs.remove_dir_all(&path).await
+                    } else {
+                        vfs.remove_file(&path).await
+                    };
+
+                    match res {
+                        Ok(_) => {
+                            deleted_count += 1;
+                        }
+                        Err(e) => {
+                            errors.push(format!("{}: {}", name, e));
+                        }
+                    }
+                }
+                Err(e) => {
+                    errors.push(format!("{}: {}", name, e));
+                }
+            }
+        }
+
+        self.active_pane_mut().selections.clear();
+        let _ = self.left_pane.refresh(vfs).await;
+        let _ = self.right_pane.refresh(vfs).await;
+
+        if errors.is_empty() {
+            self.status_message = Some(format!("Successfully deleted {} item(s).", deleted_count));
+        } else {
+            self.status_message = Some(format!(
+                "Deleted {} item(s). Errors: {}",
+                deleted_count,
+                errors.join(", ")
+            ));
+        }
+
+        Ok(())
+    }
+
+    pub async fn copy_selected(&mut self, vfs: &dyn Vfs) -> Result<()> {
+        let (active_dir, other_dir) = if self.active_left {
+            (self.left_pane.current_path.clone(), self.right_pane.current_path.clone())
+        } else {
+            (self.right_pane.current_path.clone(), self.left_pane.current_path.clone())
+        };
+
+        if active_dir == other_dir {
+            self.status_message = Some("Source and destination paths are identical.".to_string());
+            return Ok(());
+        }
+
+        let active = self.active_pane_mut();
+        let mut targets = Vec::new();
+
+        if !active.selections.is_empty() {
+            for name in &active.selections {
+                targets.push(name.clone());
+            }
+        } else if let Some(entry) = active.selected_entry() {
+            if entry.name != ".." {
+                targets.push(entry.name.clone());
+            }
+        }
+
+        if targets.is_empty() {
+            self.status_message = Some("No items to copy.".to_string());
+            return Ok(());
+        }
+
+        let mut copied_count = 0;
+        let mut errors = Vec::new();
+
+        for name in targets {
+            let from_path = Path::new(&active_dir).join(&name).to_string_lossy().to_string();
+            let to_path = Path::new(&other_dir).join(&name).to_string_lossy().to_string();
+
+            match copy_recursive(vfs, &from_path, &to_path).await {
+                Ok(_) => {
+                    copied_count += 1;
+                }
+                Err(e) => {
+                    errors.push(format!("{}: {}", name, e));
+                }
+            }
+        }
+
+        self.active_pane_mut().selections.clear();
+        let _ = self.left_pane.refresh(vfs).await;
+        let _ = self.right_pane.refresh(vfs).await;
+
+        if errors.is_empty() {
+            self.status_message = Some(format!("Successfully copied {} item(s).", copied_count));
+        } else {
+            self.status_message = Some(format!(
+                "Copied {} item(s). Errors: {}",
+                copied_count,
+                errors.join(", ")
+            ));
+        }
+
+        Ok(())
+    }
+}
+
+async fn copy_recursive(vfs: &dyn Vfs, from: &str, to: &str) -> Result<()> {
+    let meta = vfs.metadata(from).await?;
+    if meta.file_type == crate::vfs::FileType::Directory {
+        if vfs.metadata(to).await.is_err() {
+            vfs.create_dir(to).await?;
+        }
+        let entries = vfs.read_dir(from).await?;
+        for entry in entries {
+            if entry.name == ".." {
+                continue;
+            }
+            let child_from = Path::new(from).join(&entry.name).to_string_lossy().to_string();
+            let child_to = Path::new(to).join(&entry.name).to_string_lossy().to_string();
+            Box::pin(copy_recursive(vfs, &child_from, &child_to)).await?;
+        }
+    } else {
+        vfs.copy_file(from, to).await?;
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -994,5 +1148,103 @@ mod tests {
         let viewer = manager.file_viewer.as_ref().unwrap();
         assert!(!viewer.is_dirty);
         assert!(manager.status_message.as_ref().unwrap().contains("Successfully saved changes"));
+    }
+
+    #[tokio::test]
+    async fn test_manager_delete_selected() {
+        let mut mock_vfs = MockVfs::new();
+        // Mock metadata query for the file
+        mock_vfs.expect_metadata()
+            .with(mockall::predicate::eq("/left/file_a.txt"))
+            .times(1)
+            .returning(|_| {
+                Ok(FileMetadata {
+                    name: "file_a.txt".to_string(),
+                    size: 10,
+                    file_type: FileType::File,
+                    modified: None,
+                })
+            });
+        
+        // Mock actual deletion
+        mock_vfs.expect_remove_file()
+            .with(mockall::predicate::eq("/left/file_a.txt"))
+            .times(1)
+            .returning(|_| Ok(()));
+
+        // Mock pane refresh reads
+        mock_vfs.expect_read_dir()
+            .with(mockall::predicate::eq("/left"))
+            .times(1)
+            .returning(|_| Ok(vec![]));
+        mock_vfs.expect_read_dir()
+            .with(mockall::predicate::eq("/right"))
+            .times(1)
+            .returning(|_| Ok(vec![]));
+
+        let mut manager = AppStateManager::new("/left".to_string(), "/right".to_string());
+        manager.left_pane.entries = vec![
+            FileMetadata {
+                name: "file_a.txt".to_string(),
+                size: 10,
+                file_type: FileType::File,
+                modified: None,
+            }
+        ];
+        manager.left_pane.selections.insert("file_a.txt".to_string());
+
+        manager.delete_selected(&mock_vfs).await.unwrap();
+
+        assert!(manager.left_pane.selections.is_empty());
+        assert!(manager.status_message.as_ref().unwrap().contains("Successfully deleted 1 item"));
+    }
+
+    #[tokio::test]
+    async fn test_manager_copy_selected() {
+        let mut mock_vfs = MockVfs::new();
+        // Mock source metadata query
+        mock_vfs.expect_metadata()
+            .with(mockall::predicate::eq("/left/file_a.txt"))
+            .times(1)
+            .returning(|_| {
+                Ok(FileMetadata {
+                    name: "file_a.txt".to_string(),
+                    size: 10,
+                    file_type: FileType::File,
+                    modified: None,
+                })
+            });
+        
+        // Mock file copy
+        mock_vfs.expect_copy_file()
+            .with(mockall::predicate::eq("/left/file_a.txt"), mockall::predicate::eq("/right/file_a.txt"))
+            .times(1)
+            .returning(|_, _| Ok(()));
+
+        // Mock pane refresh reads
+        mock_vfs.expect_read_dir()
+            .with(mockall::predicate::eq("/left"))
+            .times(1)
+            .returning(|_| Ok(vec![]));
+        mock_vfs.expect_read_dir()
+            .with(mockall::predicate::eq("/right"))
+            .times(1)
+            .returning(|_| Ok(vec![]));
+
+        let mut manager = AppStateManager::new("/left".to_string(), "/right".to_string());
+        manager.left_pane.entries = vec![
+            FileMetadata {
+                name: "file_a.txt".to_string(),
+                size: 10,
+                file_type: FileType::File,
+                modified: None,
+            }
+        ];
+        manager.left_pane.selections.insert("file_a.txt".to_string());
+
+        manager.copy_selected(&mock_vfs).await.unwrap();
+
+        assert!(manager.left_pane.selections.is_empty());
+        assert!(manager.status_message.as_ref().unwrap().contains("Successfully copied 1 item"));
     }
 }

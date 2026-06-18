@@ -32,6 +32,8 @@ pub fn render(f: &mut Frame, state: &AppStateManager) {
     } else if state.mode == InputMode::FileViewerSavePrompt {
         render_file_viewer(f, size, state);
         render_save_prompt_popup(f, size);
+    } else if state.mode == InputMode::DeleteConfirm {
+        render_delete_confirm_popup(f, size, state);
     }
 }
 
@@ -138,19 +140,32 @@ fn render_pane(f: &mut Frame, area: Rect, pane: &PaneState, is_active: bool) {
                 _ => ("📄 ", Color::White, false),
             };
 
-            let name_span = Span::styled(
-                format!("{}{}", prefix, entry.name),
+            let is_selected = pane.selections.contains(&entry.name);
+            let display_prefix = if is_selected {
+                format!("✔ {}", prefix)
+            } else {
+                format!("  {}", prefix)
+            };
+
+            let name_style = if is_selected {
+                Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)
+            } else {
                 Style::default().fg(color).add_modifier(if is_dir {
                     Modifier::BOLD
                 } else {
                     Modifier::empty()
-                }),
+                })
+            };
+
+            let name_span = Span::styled(
+                format!("{}{}", display_prefix, entry.name),
+                name_style,
             );
 
             // Calculate spacing to push size to the right side of the pane
             let width = inner_area.width as usize;
             let size_str = format_size(entry.size, is_dir);
-            let display_name_len = prefix.chars().count() + entry.name.chars().count();
+            let display_name_len = display_prefix.chars().count() + entry.name.chars().count();
 
             let spaces = if width > display_name_len + size_str.len() + 2 {
                 width - display_name_len - size_str.len() - 2
@@ -225,7 +240,31 @@ fn render_footer(f: &mut Frame, area: Rect, state: &AppStateManager) {
                     .fg(Color::Black)
                     .add_modifier(Modifier::BOLD),
             ),
-            Span::raw(" Switch Pane  "),
+            Span::raw(" Switch  "),
+            Span::styled(
+                " Space ",
+                Style::default()
+                    .bg(Color::Yellow)
+                    .fg(Color::Black)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::raw(" Select  "),
+            Span::styled(
+                " F5/c ",
+                Style::default()
+                    .bg(Color::Yellow)
+                    .fg(Color::Black)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::raw(" Copy  "),
+            Span::styled(
+                " Del/d ",
+                Style::default()
+                    .bg(Color::Yellow)
+                    .fg(Color::Black)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::raw(" Delete  "),
             Span::styled(
                 " Enter ",
                 Style::default()
@@ -241,7 +280,7 @@ fn render_footer(f: &mut Frame, area: Rect, state: &AppStateManager) {
                     .fg(Color::Black)
                     .add_modifier(Modifier::BOLD),
             ),
-            Span::raw(" Go to Path  "),
+            Span::raw(" GoTo  "),
             Span::styled(
                 " Esc/q ",
                 Style::default()
@@ -458,5 +497,38 @@ fn render_save_prompt_popup(f: &mut Frame, area: Rect) {
     .block(popup_block);
 
     f.render_widget(Clear, popup_area); // Clears the background behind the popup
+    f.render_widget(prompt_para, popup_area);
+}
+
+fn render_delete_confirm_popup(f: &mut Frame, area: Rect, state: &AppStateManager) {
+    let popup_area = centered_rect(50, 15, area);
+
+    let popup_block = Block::default()
+        .title(Span::styled(" Delete Confirmation ", Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)))
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(Color::Red));
+
+    let active = state.active_pane();
+    let message = if !active.selections.is_empty() {
+        format!("  Delete {} selected item(s)?", active.selections.len())
+    } else if let Some(entry) = active.selected_entry() {
+        if entry.name != ".." {
+            format!("  Delete {}?", entry.name)
+        } else {
+            "  No item selected to delete.".to_string()
+        }
+    } else {
+        "  No item selected to delete.".to_string()
+    };
+
+    let prompt_para = Paragraph::new(vec![
+        Line::from(""),
+        Line::from(Span::styled(message, Style::default().fg(Color::White))),
+        Line::from(""),
+        Line::from(Span::styled("  Press: [y] Yes | [n] No | [Esc] Cancel", Style::default().fg(Color::DarkGray))),
+    ])
+    .block(popup_block);
+
+    f.render_widget(Clear, popup_area);
     f.render_widget(prompt_para, popup_area);
 }

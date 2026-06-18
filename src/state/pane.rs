@@ -6,6 +6,7 @@ pub struct PaneState {
     pub current_path: String,
     pub entries: Vec<FileMetadata>,
     pub selected_index: usize,
+    pub selections: std::collections::HashSet<String>,
 }
 
 impl PaneState {
@@ -14,6 +15,7 @@ impl PaneState {
             current_path: initial_path,
             entries: Vec::new(),
             selected_index: 0,
+            selections: std::collections::HashSet::new(),
         }
     }
 
@@ -65,6 +67,23 @@ impl PaneState {
         if !self.entries.is_empty() && self.selected_index > 0 {
             self.selected_index -= 1;
         }
+    }
+
+    pub fn toggle_selection(&mut self) {
+        let name_opt = self.selected_entry().map(|e| e.name.clone());
+        if let Some(name) = name_opt {
+            if name != ".." {
+                if self.selections.contains(&name) {
+                    self.selections.remove(&name);
+                } else {
+                    self.selections.insert(name);
+                }
+            }
+        }
+    }
+
+    pub fn clear_selections(&mut self) {
+        self.selections.clear();
     }
 }
 
@@ -173,5 +192,53 @@ mod tests {
         // Clamp at start
         state.select_prev();
         assert_eq!(state.selected_index, 0);
+    }
+
+    #[test]
+    fn test_pane_selection() {
+        let mut state = PaneState::new("/test".to_string());
+        state.entries = vec![
+            FileMetadata {
+                name: "..".to_string(),
+                size: 0,
+                file_type: FileType::Directory,
+                modified: None,
+            },
+            FileMetadata {
+                name: "dir_a".to_string(),
+                size: 0,
+                file_type: FileType::Directory,
+                modified: None,
+            },
+            FileMetadata {
+                name: "file_a.txt".to_string(),
+                size: 10,
+                file_type: FileType::File,
+                modified: None,
+            },
+        ];
+        
+        // ".." cannot be selected
+        state.selected_index = 0;
+        state.toggle_selection();
+        assert!(state.selections.is_empty());
+
+        // "dir_a" can be selected
+        state.selected_index = 1;
+        state.toggle_selection();
+        assert!(state.selections.contains("dir_a"));
+
+        // "dir_a" can be unselected
+        state.toggle_selection();
+        assert!(!state.selections.contains("dir_a"));
+
+        // "file_a.txt" can be selected
+        state.selected_index = 2;
+        state.toggle_selection();
+        assert!(state.selections.contains("file_a.txt"));
+
+        // clear selections works
+        state.clear_selections();
+        assert!(state.selections.is_empty());
     }
 }
