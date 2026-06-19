@@ -34,6 +34,12 @@ pub fn render(f: &mut Frame, state: &AppStateManager) {
         render_save_prompt_popup(f, size);
     } else if state.mode == InputMode::DeleteConfirm {
         render_delete_confirm_popup(f, size, state);
+    } else if state.mode == InputMode::CreateFolder {
+        render_create_folder_popup(f, size, state);
+    } else if state.mode == InputMode::CreateFile {
+        render_create_file_popup(f, size, state);
+    } else if state.mode == InputMode::RenameOrMove {
+        render_rename_or_move_popup(f, size, state);
     }
 }
 
@@ -257,6 +263,30 @@ fn render_footer(f: &mut Frame, area: Rect, state: &AppStateManager) {
                     .add_modifier(Modifier::BOLD),
             ),
             Span::raw(" Copy  "),
+            Span::styled(
+                " F6 ",
+                Style::default()
+                    .bg(Color::Yellow)
+                    .fg(Color::Black)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::raw(" Move/Rename  "),
+            Span::styled(
+                " F7 ",
+                Style::default()
+                    .bg(Color::Yellow)
+                    .fg(Color::Black)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::raw(" NewFolder  "),
+            Span::styled(
+                " n ",
+                Style::default()
+                    .bg(Color::Yellow)
+                    .fg(Color::Black)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::raw(" NewFile  "),
             Span::styled(
                 " Del/d ",
                 Style::default()
@@ -531,4 +561,103 @@ fn render_delete_confirm_popup(f: &mut Frame, area: Rect, state: &AppStateManage
 
     f.render_widget(Clear, popup_area);
     f.render_widget(prompt_para, popup_area);
+}
+
+fn render_create_folder_popup(f: &mut Frame, area: Rect, state: &AppStateManager) {
+    let popup_area = centered_rect(60, 20, area);
+
+    let popup_block = Block::default()
+        .title(Span::styled(
+            " Create New Folder ",
+            Style::default()
+                .fg(Color::Yellow)
+                .add_modifier(Modifier::BOLD),
+        ))
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(Color::Yellow));
+
+    let input_para = Paragraph::new(vec![
+        Line::from(vec![
+            Span::styled("> ", Style::default().fg(Color::LightGreen)),
+            Span::raw(&state.input_buffer),
+            Span::styled("█", Style::default().fg(Color::LightGreen)),
+        ]),
+        Line::from(""),
+        Line::from(Span::styled(
+            "Press Enter to create | Esc to cancel",
+            Style::default().fg(Color::DarkGray),
+        )),
+    ])
+    .block(popup_block);
+
+    f.render_widget(Clear, popup_area);
+    f.render_widget(input_para, popup_area);
+}
+
+fn render_create_file_popup(f: &mut Frame, area: Rect, state: &AppStateManager) {
+    let popup_area = centered_rect(60, 20, area);
+
+    let popup_block = Block::default()
+        .title(Span::styled(
+            " Create New File ",
+            Style::default()
+                .fg(Color::Yellow)
+                .add_modifier(Modifier::BOLD),
+        ))
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(Color::Yellow));
+
+    let input_para = Paragraph::new(vec![
+        Line::from(vec![
+            Span::styled("> ", Style::default().fg(Color::LightGreen)),
+            Span::raw(&state.input_buffer),
+            Span::styled("█", Style::default().fg(Color::LightGreen)),
+        ]),
+        Line::from(""),
+        Line::from(Span::styled(
+            "Press Enter to create empty file | Esc to cancel",
+            Style::default().fg(Color::DarkGray),
+        )),
+    ])
+    .block(popup_block);
+
+    f.render_widget(Clear, popup_area);
+    f.render_widget(input_para, popup_area);
+}
+
+fn render_rename_or_move_popup(f: &mut Frame, area: Rect, state: &AppStateManager) {
+    let popup_area = centered_rect(65, 20, area);
+
+    let title = if state.rename_target.is_some() {
+        " Rename / Move File or Folder "
+    } else {
+        " Move Selected Items "
+    };
+
+    let popup_block = Block::default()
+        .title(Span::styled(
+            title,
+            Style::default()
+                .fg(Color::Yellow)
+                .add_modifier(Modifier::BOLD),
+        ))
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(Color::Yellow));
+
+    let input_para = Paragraph::new(vec![
+        Line::from(vec![
+            Span::styled("> ", Style::default().fg(Color::LightGreen)),
+            Span::raw(&state.input_buffer),
+            Span::styled("█", Style::default().fg(Color::LightGreen)),
+        ]),
+        Line::from(""),
+        Line::from(Span::styled(
+            "Press Enter to execute | Esc to cancel",
+            Style::default().fg(Color::DarkGray),
+        )),
+    ])
+    .block(popup_block);
+
+    f.render_widget(Clear, popup_area);
+    f.render_widget(input_para, popup_area);
 }

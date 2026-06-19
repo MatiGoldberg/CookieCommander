@@ -12,6 +12,9 @@ pub enum InputMode {
     FileViewer,
     FileViewerSavePrompt,
     DeleteConfirm,
+    CreateFolder,
+    CreateFile,
+    RenameOrMove,
 }
 
 #[derive(Debug, Clone)]
@@ -131,6 +134,7 @@ pub struct AppStateManager {
     pub file_viewer: Option<FileViewerState>,
     pub config: AppConfig,
     pub config_path: String,
+    pub rename_target: Option<String>,
 }
 
 impl AppStateManager {
@@ -145,6 +149,7 @@ impl AppStateManager {
             file_viewer: None,
             config: AppConfig::default(),
             config_path: "config.json".to_string(),
+            rename_target: None,
         }
     }
 
@@ -605,6 +610,229 @@ impl AppStateManager {
             ));
         }
 
+        Ok(())
+    }
+
+    pub fn start_create_folder(&mut self) {
+        self.mode = InputMode::CreateFolder;
+        self.input_buffer.clear();
+        self.status_message = None;
+    }
+
+    pub async fn commit_create_folder(&mut self, vfs: &dyn Vfs) -> Result<()> {
+        let folder_name = self.input_buffer.trim().to_string();
+        self.mode = InputMode::Normal;
+        self.input_buffer.clear();
+
+        if folder_name.is_empty() {
+            self.status_message = Some("Error: Folder name cannot be empty".to_string());
+            return Ok(());
+        }
+        if folder_name.contains('/') || folder_name.contains('\\') || folder_name == "." || folder_name == ".." {
+            self.status_message = Some("Error: Invalid folder name".to_string());
+            return Ok(());
+        }
+
+        let active = self.active_pane();
+        let target_path = Path::new(&active.current_path)
+            .join(&folder_name)
+            .to_string_lossy()
+            .to_string();
+
+        if vfs.metadata(&target_path).await.is_ok() {
+            self.status_message = Some(format!("Error: Item '{}' already exists", folder_name));
+            return Ok(());
+        }
+
+        match vfs.create_dir(&target_path).await {
+            Ok(_) => {
+                self.status_message = Some(format!("Folder '{}' created successfully", folder_name));
+                let _ = self.left_pane.refresh(vfs).await;
+                let _ = self.right_pane.refresh(vfs).await;
+            }
+            Err(e) => {
+                self.status_message = Some(format!("Failed to create folder: {}", e));
+            }
+        }
+
+        Ok(())
+    }
+
+    pub fn start_create_file(&mut self) {
+        self.mode = InputMode::CreateFile;
+        self.input_buffer.clear();
+        self.status_message = None;
+    }
+
+    pub async fn commit_create_file(&mut self, vfs: &dyn Vfs) -> Result<()> {
+        let file_name = self.input_buffer.trim().to_string();
+        self.mode = InputMode::Normal;
+        self.input_buffer.clear();
+
+        if file_name.is_empty() {
+            self.status_message = Some("Error: File name cannot be empty".to_string());
+            return Ok(());
+        }
+        if file_name.contains('/') || file_name.contains('\\') || file_name == "." || file_name == ".." {
+            self.status_message = Some("Error: Invalid file name".to_string());
+            return Ok(());
+        }
+
+        let active = self.active_pane();
+        let target_path = Path::new(&active.current_path)
+            .join(&file_name)
+            .to_string_lossy()
+            .to_string();
+
+        if vfs.metadata(&target_path).await.is_ok() {
+            self.status_message = Some(format!("Error: Item '{}' already exists", file_name));
+            return Ok(());
+        }
+
+        match vfs.write_file(&target_path, "").await {
+            Ok(_) => {
+                self.status_message = Some(format!("File '{}' created successfully", file_name));
+                let _ = self.left_pane.refresh(vfs).await;
+                let _ = self.right_pane.refresh(vfs).await;
+            }
+            Err(e) => {
+                self.status_message = Some(format!("Failed to create file: {}", e));
+            }
+        }
+
+        Ok(())
+    }
+
+    pub fn start_rename_or_move(&mut self) {
+        let active = self.active_pane();
+        if !active.selections.is_empty() {
+            // Multi-select mode: move selected to other pane
+            let other_dir = if self.active_left {
+                self.right_pane.current_path.clone()
+            } else {
+                self.left_pane.current_path.clone()
+            };
+            self.mode = InputMode::RenameOrMove;
+            self.input_buffer = other_dir;
+            self.rename_target = None;
+            self.status_message = None;
+        } else if let Some(entry) = active.selected_entry() {
+            if entry.name == ".." {
+                self.status_message = Some("Error: Cannot rename or move '..'".to_string());
+                return;
+            }
+            let full_path = Path::new(&active.current_path)
+                .join(&entry.name)
+                .to_string_lossy()
+                .to_string();
+            self.mode = InputMode::RenameOrMove;
+            self.input_buffer = full_path.clone();
+            self.rename_target = Some(full_path);
+            self.status_message = None;
+        } else {
+            self.status_message = Some("No item selected to rename or move".to_string());
+        }
+    }
+
+    pub async fn commit_rename_or_move(&mut self, vfs: &dyn Vfs) -> Result<()> {
+        let target_input = self.input_buffer.trim().to_string();
+        self.mode = InputMode::Normal;
+        self.input_buffer.clear();
+
+        if target_input.is_empty() {
+            self.status_message = Some("Error: Target path cannot be empty".to_string());
+            self.rename_target = None;
+            return Ok(());
+        }
+
+        if let Some(src_path) = self.rename_target.take() {
+            // Single-item rename/move
+            if src_path == target_input {
+                self.status_message = Some("Source and target paths are identical".to_string());
+                return Ok(());
+            }
+
+            // Resolve target_path if relative
+            let resolved_target = if Path::new(&target_input).is_absolute() {
+                target_input
+            } else {
+                let active = self.active_pane();
+                Path::new(&active.current_path)
+                    .join(&target_input)
+                    .to_string_lossy()
+                    .to_string()
+            };
+
+            match vfs.rename(&src_path, &resolved_target).await {
+                Ok(_) => {
+                    self.status_message = Some("Rename/Move completed successfully".to_string());
+                }
+                Err(e) => {
+                    self.status_message = Some(format!("Rename/Move failed: {}", e));
+                }
+            }
+        } else {
+            // Multi-item move
+            let active = self.active_pane_mut();
+            let selections: Vec<String> = active.selections.drain().collect();
+            let current_dir = active.current_path.clone();
+
+            if selections.is_empty() {
+                self.status_message = Some("No items selected to move".to_string());
+                return Ok(());
+            }
+
+            let resolved_dest = if Path::new(&target_input).is_absolute() {
+                target_input
+            } else {
+                Path::new(&current_dir)
+                    .join(&target_input)
+                    .to_string_lossy()
+                    .to_string()
+            };
+
+            // Check if destination is same as source directory
+            if current_dir == resolved_dest {
+                self.status_message = Some("Source and target directories are identical".to_string());
+                return Ok(());
+            }
+
+            // Ensure target directory exists (could be checked or let rename fail, but let's check it)
+            if vfs.metadata(&resolved_dest).await.is_err() {
+                self.status_message = Some("Error: Target directory does not exist".to_string());
+                return Ok(());
+            }
+
+            let mut moved_count = 0;
+            let mut errors = Vec::new();
+
+            for name in selections {
+                let src_item = Path::new(&current_dir).join(&name).to_string_lossy().to_string();
+                let dest_item = Path::new(&resolved_dest).join(&name).to_string_lossy().to_string();
+
+                match vfs.rename(&src_item, &dest_item).await {
+                    Ok(_) => {
+                        moved_count += 1;
+                    }
+                    Err(e) => {
+                        errors.push(format!("{}: {}", name, e));
+                    }
+                }
+            }
+
+            if errors.is_empty() {
+                self.status_message = Some(format!("Successfully moved {} item(s)", moved_count));
+            } else {
+                self.status_message = Some(format!(
+                    "Moved {} item(s). Errors: {}",
+                    moved_count,
+                    errors.join(", ")
+                ));
+            }
+        }
+
+        let _ = self.left_pane.refresh(vfs).await;
+        let _ = self.right_pane.refresh(vfs).await;
         Ok(())
     }
 }
@@ -1246,5 +1474,175 @@ mod tests {
 
         assert!(manager.left_pane.selections.is_empty());
         assert!(manager.status_message.as_ref().unwrap().contains("Successfully copied 1 item"));
+    }
+
+    #[tokio::test]
+    async fn test_manager_create_folder_success() {
+        let mut mock_vfs = MockVfs::new();
+        mock_vfs.expect_metadata()
+            .with(mockall::predicate::eq("/left/new_folder"))
+            .times(1)
+            .returning(|_| Err(anyhow::anyhow!("Not found")));
+
+        mock_vfs.expect_create_dir()
+            .with(mockall::predicate::eq("/left/new_folder"))
+            .times(1)
+            .returning(|_| Ok(()));
+
+        mock_vfs.expect_read_dir()
+            .with(mockall::predicate::eq("/left"))
+            .times(1)
+            .returning(|_| Ok(vec![]));
+        mock_vfs.expect_read_dir()
+            .with(mockall::predicate::eq("/right"))
+            .times(1)
+            .returning(|_| Ok(vec![]));
+
+        let mut manager = AppStateManager::new("/left".to_string(), "/right".to_string());
+        manager.start_create_folder();
+        assert_eq!(manager.mode, InputMode::CreateFolder);
+
+        manager.input_buffer = "new_folder".to_string();
+        manager.commit_create_folder(&mock_vfs).await.unwrap();
+
+        assert_eq!(manager.mode, InputMode::Normal);
+        assert!(manager.status_message.as_ref().unwrap().contains("Folder 'new_folder' created successfully"));
+    }
+
+    #[tokio::test]
+    async fn test_manager_create_file_success() {
+        let mut mock_vfs = MockVfs::new();
+        mock_vfs.expect_metadata()
+            .with(mockall::predicate::eq("/left/new_file.txt"))
+            .times(1)
+            .returning(|_| Err(anyhow::anyhow!("Not found")));
+
+        mock_vfs.expect_write_file()
+            .with(mockall::predicate::eq("/left/new_file.txt"), mockall::predicate::eq(""))
+            .times(1)
+            .returning(|_, _| Ok(()));
+
+        mock_vfs.expect_read_dir()
+            .with(mockall::predicate::eq("/left"))
+            .times(1)
+            .returning(|_| Ok(vec![]));
+        mock_vfs.expect_read_dir()
+            .with(mockall::predicate::eq("/right"))
+            .times(1)
+            .returning(|_| Ok(vec![]));
+
+        let mut manager = AppStateManager::new("/left".to_string(), "/right".to_string());
+        manager.start_create_file();
+        assert_eq!(manager.mode, InputMode::CreateFile);
+
+        manager.input_buffer = "new_file.txt".to_string();
+        manager.commit_create_file(&mock_vfs).await.unwrap();
+
+        assert_eq!(manager.mode, InputMode::Normal);
+        assert!(manager.status_message.as_ref().unwrap().contains("File 'new_file.txt' created successfully"));
+    }
+
+    #[tokio::test]
+    async fn test_manager_rename_single_success() {
+        let mut mock_vfs = MockVfs::new();
+        mock_vfs.expect_rename()
+            .with(mockall::predicate::eq("/left/file_a.txt"), mockall::predicate::eq("/left/file_b.txt"))
+            .times(1)
+            .returning(|_, _| Ok(()));
+
+        mock_vfs.expect_read_dir()
+            .with(mockall::predicate::eq("/left"))
+            .times(1)
+            .returning(|_| Ok(vec![]));
+        mock_vfs.expect_read_dir()
+            .with(mockall::predicate::eq("/right"))
+            .times(1)
+            .returning(|_| Ok(vec![]));
+
+        let mut manager = AppStateManager::new("/left".to_string(), "/right".to_string());
+        manager.left_pane.entries = vec![
+            FileMetadata {
+                name: "file_a.txt".to_string(),
+                size: 10,
+                file_type: FileType::File,
+                modified: None,
+            }
+        ];
+        manager.left_pane.selected_index = 0;
+
+        manager.start_rename_or_move();
+        assert_eq!(manager.mode, InputMode::RenameOrMove);
+        assert_eq!(manager.input_buffer, "/left/file_a.txt");
+        assert_eq!(manager.rename_target.as_deref(), Some("/left/file_a.txt"));
+
+        manager.input_buffer = "/left/file_b.txt".to_string();
+        manager.commit_rename_or_move(&mock_vfs).await.unwrap();
+
+        assert_eq!(manager.mode, InputMode::Normal);
+        assert!(manager.status_message.as_ref().unwrap().contains("Rename/Move completed successfully"));
+    }
+
+    #[tokio::test]
+    async fn test_manager_move_multi_success() {
+        let mut mock_vfs = MockVfs::new();
+        // Check destination dir exists
+        mock_vfs.expect_metadata()
+            .with(mockall::predicate::eq("/right"))
+            .times(1)
+            .returning(|_| {
+                Ok(FileMetadata {
+                    name: "right".to_string(),
+                    size: 0,
+                    file_type: FileType::Directory,
+                    modified: None,
+                })
+            });
+
+        // Mock renames for both selected items
+        mock_vfs.expect_rename()
+            .with(mockall::predicate::eq("/left/file_a.txt"), mockall::predicate::eq("/right/file_a.txt"))
+            .times(1)
+            .returning(|_, _| Ok(()));
+        mock_vfs.expect_rename()
+            .with(mockall::predicate::eq("/left/file_b.txt"), mockall::predicate::eq("/right/file_b.txt"))
+            .times(1)
+            .returning(|_, _| Ok(()));
+
+        mock_vfs.expect_read_dir()
+            .with(mockall::predicate::eq("/left"))
+            .times(1)
+            .returning(|_| Ok(vec![]));
+        mock_vfs.expect_read_dir()
+            .with(mockall::predicate::eq("/right"))
+            .times(1)
+            .returning(|_| Ok(vec![]));
+
+        let mut manager = AppStateManager::new("/left".to_string(), "/right".to_string());
+        manager.left_pane.entries = vec![
+            FileMetadata {
+                name: "file_a.txt".to_string(),
+                size: 10,
+                file_type: FileType::File,
+                modified: None,
+            },
+            FileMetadata {
+                name: "file_b.txt".to_string(),
+                size: 20,
+                file_type: FileType::File,
+                modified: None,
+            }
+        ];
+        manager.left_pane.selections.insert("file_a.txt".to_string());
+        manager.left_pane.selections.insert("file_b.txt".to_string());
+
+        manager.start_rename_or_move();
+        assert_eq!(manager.mode, InputMode::RenameOrMove);
+        assert_eq!(manager.input_buffer, "/right");
+        assert!(manager.rename_target.is_none());
+
+        manager.commit_rename_or_move(&mock_vfs).await.unwrap();
+
+        assert_eq!(manager.mode, InputMode::Normal);
+        assert!(manager.status_message.as_ref().unwrap().contains("Successfully moved 2 item(s)"));
     }
 }

@@ -109,6 +109,11 @@ impl Vfs for LocalVfs {
         tokio::fs::copy(Path::new(from), Path::new(to)).await?;
         Ok(())
     }
+
+    async fn rename(&self, from: &str, to: &str) -> Result<()> {
+        tokio::fs::rename(Path::new(from), Path::new(to)).await?;
+        Ok(())
+    }
 }
 
 #[cfg(test)]
@@ -213,5 +218,27 @@ mod tests {
         assert_eq!(content, "written content");
 
         let _ = remove_file(file_path);
+    }
+
+    #[tokio::test]
+    async fn test_local_vfs_rename() {
+        let unique_id = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let from_path = std::env::temp_dir().join(format!("test_rename_from_{}.txt", unique_id));
+        let to_path = std::env::temp_dir().join(format!("test_rename_to_{}.txt", unique_id));
+        write(&from_path, b"rename me").unwrap();
+
+        let vfs = LocalVfs;
+        vfs.rename(from_path.to_str().unwrap(), to_path.to_str().unwrap()).await.unwrap();
+
+        assert!(!from_path.exists());
+        assert!(to_path.exists());
+
+        let content = std::fs::read_to_string(&to_path).unwrap();
+        assert_eq!(content, "rename me");
+
+        let _ = remove_file(to_path);
     }
 }
