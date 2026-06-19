@@ -47,4 +47,7 @@ pub trait Vfs: Send + Sync {
 
     /// Copies a single file from one path to another.
     async fn copy_file(&self, from: &str, to: &str) -> Result<()>;
+
+    /// Renames or moves a file or directory.
+    async fn rename(&self, from: &str, to: &str) -> Result<()>;
 }

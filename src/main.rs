@@ -102,11 +102,65 @@ async fn run_app<B: ratatui::backend::Backend>(
                             KeyCode::F(5) | KeyCode::Char('c') => {
                                 state.copy_selected(vfs).await?;
                             }
+                            KeyCode::F(7) => {
+                                state.start_create_folder();
+                            }
+                            KeyCode::Char('n') => {
+                                state.start_create_file();
+                            }
+                            KeyCode::F(6) => {
+                                state.start_rename_or_move();
+                            }
                             _ => {}
                         },
                         InputMode::GoToPath => match key.code {
                             KeyCode::Enter => {
                                 state.commit_go_to_path(vfs).await?;
+                            }
+                            KeyCode::Esc => {
+                                state.cancel_input();
+                            }
+                            KeyCode::Backspace => {
+                                state.input_buffer.pop();
+                            }
+                            KeyCode::Char(c) => {
+                                state.input_buffer.push(c);
+                            }
+                            _ => {}
+                        },
+                        InputMode::CreateFolder => match key.code {
+                            KeyCode::Enter => {
+                                state.commit_create_folder(vfs).await?;
+                            }
+                            KeyCode::Esc => {
+                                state.cancel_input();
+                            }
+                            KeyCode::Backspace => {
+                                state.input_buffer.pop();
+                            }
+                            KeyCode::Char(c) => {
+                                state.input_buffer.push(c);
+                            }
+                            _ => {}
+                        },
+                        InputMode::CreateFile => match key.code {
+                            KeyCode::Enter => {
+                                state.commit_create_file(vfs).await?;
+                            }
+                            KeyCode::Esc => {
+                                state.cancel_input();
+                            }
+                            KeyCode::Backspace => {
+                                state.input_buffer.pop();
+                            }
+                            KeyCode::Char(c) => {
+                                state.input_buffer.push(c);
+                            }
+                            _ => {}
+                        },
+                        InputMode::RenameOrMove => match key.code {
+                            KeyCode::Enter => {
+                                state.commit_rename_or_move(vfs).await?;
                             }
                             KeyCode::Esc => {
                                 state.cancel_input();
